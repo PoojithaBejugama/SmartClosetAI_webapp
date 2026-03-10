@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Playfair+Display:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 12% 97%;
+    --foreground: 280 15% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 280 15% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 280 15% 12%;
+
+    --primary: 280 35% 38%;
+    --primary-foreground: 40 30% 96%;
+
+    --secondary: 35 25% 95%;
+    --secondary-foreground: 280 15% 12%;
+
+    --muted: 30 10% 93%;
+    --muted-foreground: 280 8% 46%;
+
+    --accent: 35 30% 91%;
+    --accent-foreground: 280 25% 30%;
+
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 12% 90%;
+    --input: 30 10% 89%;
+    --ring: 280 35% 38%;
+
+    --radius: 0.875rem;
+
+    --sidebar-background: 280 12% 98%;
+    --sidebar-foreground: 280 10% 30%;
+    --sidebar-primary: 280 35% 38%;
+    --sidebar-primary-foreground: 40 30% 96%;
+    --sidebar-accent: 280 18% 95%;
+    --sidebar-accent-foreground: 280 30% 35%;
+    --sidebar-border: 30 10% 92%;
+    --sidebar-ring: 280 35% 38%;
+
+    --font-heading: 'Playfair Display', serif;
+    --font-body: 'DM Sans', sans-serif;
+
+    --shadow-xs: 0 1px 2px 0 hsl(280 15% 12% / 0.03);
+    --shadow-card: 0 1px 2px 0 hsl(280 15% 12% / 0.03), 0 2px 8px -1px hsl(280 15% 12% / 0.04), 0 4px 16px -4px hsl(280 15% 12% / 0.04);
+    --shadow-card-hover: 0 2px 4px 0 hsl(280 15% 12% / 0.04), 0 8px 24px -4px hsl(280 35% 38% / 0.1), 0 16px 40px -8px hsl(280 15% 12% / 0.06);
+    --shadow-soft: 0 1px 4px -1px hsl(280 35% 38% / 0.1), 0 2px 12px -2px hsl(280 35% 38% / 0.06);
+    --shadow-elevated: 0 4px 12px -2px hsl(280 15% 12% / 0.06), 0 12px 36px -8px hsl(280 15% 12% / 0.1);
+
+    --gradient-primary: linear-gradient(135deg, hsl(280 35% 38%), hsl(310 30% 48%));
+    --gradient-hero: linear-gradient(160deg, hsl(280 15% 97%), hsl(35 20% 96%) 50%, hsl(40 25% 97%));
+    --gradient-accent: linear-gradient(135deg, hsl(35 25% 94%), hsl(280 18% 95%));
+    --gradient-subtle: linear-gradient(135deg, hsl(35 20% 96%), hsl(280 15% 97%));
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer utilities {
+  .shadow-xs {
+    box-shadow: var(--shadow-xs);
+  }
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-card-hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+  .gradient-accent {
+    background: var(--gradient-accent);
+  }
+  .gradient-subtle {
+    background: var(--gradient-subtle);
+  }
+  .font-heading {
+    font-family: var(--font-heading);
+  }
+  .font-body {
+    font-family: var(--font-body);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
