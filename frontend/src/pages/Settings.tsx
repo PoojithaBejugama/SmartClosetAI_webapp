@@ -10,6 +10,8 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { profileSchema, changePasswordSchema, type ProfileFormData, type ChangePasswordFormData } from "@/utils/validations";
 import { useToast } from "@/hooks/use-toast";
+// TODO(BACKEND): Uncomment when backend profile endpoints are ready.
+// import { authService } from "@/services/authService";
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -32,6 +34,10 @@ export default function SettingsPage() {
   });
 
   const handleProfileSave = (data: ProfileFormData) => {
+    // TODO(BACKEND): Replace local-only update with backend persistence.
+    // Example:
+    // const updated = await authService.updateProfile(data);
+    // updateUser(updated);
     if (user) {
       updateUser({ ...user, ...data });
     }
@@ -39,11 +45,16 @@ export default function SettingsPage() {
   };
 
   const handlePasswordChange = (_data: ChangePasswordFormData) => {
+    // TODO(BACKEND): Call backend password endpoint instead of toast-only flow.
+    // Example:
+    // await authService.changePassword(_data);
     toast({ title: "Password updated", description: "Your password has been changed." });
     passwordForm.reset();
   };
 
   const handleLogout = () => {
+    // TODO(BACKEND): Keep using logout() from useAuth; it already calls
+    // authService.logout() when not in demo mode.
     logout();
     navigate("/");
   };
@@ -160,6 +171,8 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground">Permanently delete your account and all data</p>
             </div>
             <Button variant="destructive" size="sm">Delete</Button>
+            {/* TODO(BACKEND): Wire this button to authService.deleteAccount(),
+                then clear auth state and navigate to landing/auth page. */}
           </div>
         </section>
       </div>

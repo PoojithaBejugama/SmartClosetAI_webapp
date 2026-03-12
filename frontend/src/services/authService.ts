@@ -56,6 +56,9 @@ export interface ChangePasswordRequest {
 }
 
 export const authService = {
+  // TODO(BACKEND): Ensure backend route names match these paths exactly.
+  // If your API uses /api/auth/* or different names, update them here only.
+
   // Sends email + password to the backend. If correct, the server returns
   // a token (a long unique string that proves the user is authenticated) and
   // the user's basic profile data. The app then stores that token in localStorage.
@@ -65,6 +68,7 @@ export const authService = {
   // Same as login, but creates a brand new account first.
   // Most backends return the same token + user object so the user is
   // immediately logged in after signing up — no extra step needed.
+  // TODO(BACKEND): If signup should not auto-login, change return type and flow.
   signup: (data: SignupRequest) =>
     apiClient.post<AuthResponse>("/auth/signup", data),
 

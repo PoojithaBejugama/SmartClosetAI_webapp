@@ -18,6 +18,8 @@ export default function AuthPage() {
   const { login, signup, isLoading } = useAuth();
   const { toast } = useToast();
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || "/dashboard";
+  // TODO(BACKEND): If you add email verification, MFA, or onboarding checks,
+  // update this redirect logic to route users to the correct next step.
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -32,6 +34,8 @@ export default function AuthPage() {
   const handleLogin = async (data: LoginFormData) => {
     try {
       await login({ email: data.email, password: data.password });
+      // TODO(BACKEND): If backend returns "email_not_verified" or similar,
+      // handle that response before navigating to protected pages.
       navigate(from, { replace: true });
     } catch (err: any) {
       toast({ title: "Login failed", description: err.message, variant: "destructive" });
@@ -41,6 +45,8 @@ export default function AuthPage() {
   const handleSignup = async (data: SignupFormData) => {
     try {
       await signup({ name: data.name, email: data.email, password: data.password });
+      // TODO(BACKEND): If signup should not auto-login, navigate to
+      // a "check your email" page instead of protected routes.
       navigate(from, { replace: true });
     } catch (err: any) {
       toast({ title: "Signup failed", description: err.message, variant: "destructive" });

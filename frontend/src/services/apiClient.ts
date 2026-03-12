@@ -14,6 +14,9 @@
 // If it isn't set (like in local dev), we fall back to "/api" which the
 // Vite dev server proxies to the real backend.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+// TODO(BACKEND): Set VITE_API_BASE_URL in .env once your backend is running.
+// Example: VITE_API_BASE_URL=http://localhost:8000
+// If unset, the app falls back to demo/local behavior in useAuth.ts.
 
 // This is a TypeScript "interface" — it defines the shape of options we can
 // pass when making a request. We extend the built-in RequestInit type (which

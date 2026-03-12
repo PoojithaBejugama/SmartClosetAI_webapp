@@ -1,6 +1,13 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 import { authService, type AuthUser, type LoginRequest, type SignupRequest } from "@/services/authService";
 
+// TODO(BACKEND): Search for this tag to find every auth integration point.
+// TODO(BACKEND): Backend integration checklist for this file:
+// 1) Set VITE_API_BASE_URL in your frontend .env so demo mode turns off.
+// 2) Keep login/signup calling authService.* and ensure backend returns { token, user }.
+// 3) Optional hardening: on app load, call authService.getProfile() to verify a stored token.
+// 4) Keep logout calling authService.logout() if your backend invalidates tokens.
+
 interface AuthContextType {
   user: AuthUser | null;
   token: string | null;
@@ -14,7 +21,8 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Check if we're in demo mode (no real API)
+// TODO(BACKEND): Remove demo mode fallback after backend is always available.
+// Until VITE_API_BASE_URL is set, login/signup below will use local demo auth.
 const isDemoMode = !import.meta.env.VITE_API_BASE_URL;
 
 const DEMO_USER: AuthUser = {
@@ -35,6 +43,11 @@ export function useAuthProvider() {
   );
   const [isLoading, setIsLoading] = useState(false);
 
+  // TODO(BACKEND): Optional startup validation.
+  // Right now, if localStorage has a token+user we trust it immediately.
+  // With a backend, you can validate the token on startup via authService.getProfile()
+  // and logout() if profile fetch fails with 401.
+
   const isAuthenticated = !!token && !!user;
 
   const persistAuth = useCallback((authToken: string, authUser: AuthUser) => {
@@ -48,9 +61,11 @@ export function useAuthProvider() {
     setIsLoading(true);
     try {
       if (isDemoMode) {
+        // TODO(BACKEND): Delete this demo branch when backend auth is required.
         persistAuth("demo-token", DEMO_USER);
         return;
       }
+      // TODO(BACKEND): Ensure POST /auth/login exists and returns { token, user }.
       const response = await authService.login(data);
       persistAuth(response.token, response.user);
     } finally {
@@ -62,9 +77,11 @@ export function useAuthProvider() {
     setIsLoading(true);
     try {
       if (isDemoMode) {
+        // TODO(BACKEND): Delete this demo branch when backend auth is required.
         persistAuth("demo-token", { ...DEMO_USER, name: data.name, email: data.email });
         return;
       }
+      // TODO(BACKEND): Ensure POST /auth/signup exists and returns { token, user }.
       const response = await authService.signup(data);
       persistAuth(response.token, response.user);
     } finally {
@@ -78,6 +95,7 @@ export function useAuthProvider() {
     setToken(null);
     setUser(null);
     if (!isDemoMode) {
+      // TODO(BACKEND): Keep this call if your backend supports token invalidation.
       authService.logout().catch(() => {});
     }
   }, []);
