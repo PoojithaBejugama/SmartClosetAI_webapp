@@ -30,8 +30,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#this lets the routes talk to the DB
-Base.metadata.create_all(bind=engine)
+@app.on_event("startup")
+def create_database_tables():
+    Base.metadata.create_all(bind=engine)
 
 #Db session dependency - can only start if a db session is active
 def get_db():
