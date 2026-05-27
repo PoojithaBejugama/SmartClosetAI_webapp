@@ -3,7 +3,7 @@ import { clothingService, type ClothingFilters, type CreateClothingRequest } fro
 import { mockClothingItems } from "@/data/mockData";
 import type { ClothingItem } from "@/types";
 
-const isDemoMode = !import.meta.env.VITE_API_BASE_URL;
+const isDemoMode = import.meta.env.VITE_DEMO_MODE === "true";
 
 export const clothingKeys = {
   all: ["clothing"] as const,

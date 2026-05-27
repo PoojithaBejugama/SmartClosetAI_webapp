@@ -21,9 +21,9 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// TODO(BACKEND): Remove demo mode fallback after backend is always available.
-// Until VITE_API_BASE_URL is set, login/signup below will use local demo auth.
-const isDemoMode = !import.meta.env.VITE_API_BASE_URL;
+// TODO(BACKEND): Remove demo mode fallback after backend auth routes exist.
+// The current backend has no /auth/* routes, so auth stays local/demo for now.
+const isDemoMode = import.meta.env.VITE_AUTH_DEMO_MODE !== "false";
 
 const DEMO_USER: AuthUser = {
   id: "demo-user",

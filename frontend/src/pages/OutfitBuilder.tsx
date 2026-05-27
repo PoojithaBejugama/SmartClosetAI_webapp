@@ -4,11 +4,12 @@ import { Input } from "@/components/ui/input";
 import { AppLayout } from "@/layouts/AppLayout";
 import { ClothingCard } from "@/components/ClothingCard";
 import { FilterBar } from "@/components/FilterBar";
-import { mockClothingItems } from "@/data/mockData";
 import type { ClothingItem } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { X, Save, Shirt } from "lucide-react";
 import { motion } from "framer-motion";
+import { useClothingItems } from "@/hooks/useClothing";
+import { useCreateOutfit } from "@/hooks/useOutfits";
 
 const slots = ["Top", "Bottom", "Outerwear", "Shoes", "Accessories"] as const;
 
@@ -18,12 +19,10 @@ export default function OutfitBuilderPage() {
   const [outfitName, setOutfitName] = useState("");
   const [selectedItems, setSelectedItems] = useState<Record<string, ClothingItem>>({});
   const [filterCategory, setFilterCategory] = useState<string>("all");
+  const createOutfit = useCreateOutfit();
 
-  const filteredItems = mockClothingItems.filter((item) => {
-    const matchSearch = `${item.category} ${item.color}`.toLowerCase().includes(search.toLowerCase());
-    const matchCat = filterCategory === "all" || item.category === filterCategory;
-    return matchSearch && matchCat;
-  });
+  const { data, isLoading } = useClothingItems({ search, category: filterCategory });
+  const filteredItems = data?.data || [];
 
   const addItem = (item: ClothingItem) => {
     const slot = item.category === "Top" || item.category === "Dress" ? "Top" : item.category === "Bottom" ? "Bottom" : item.category;
@@ -40,8 +39,18 @@ export default function OutfitBuilderPage() {
 
   const filledCount = Object.keys(selectedItems).length;
 
-  const handleSave = () => {
-    toast({ title: "Outfit saved!", description: `"${outfitName || "Untitled Outfit"}" has been saved.` });
+  const handleSave = async () => {
+    try {
+      await createOutfit.mutateAsync({
+        name: outfitName || "Untitled Outfit",
+        items: Object.values(selectedItems).map((item) => item.id),
+      });
+      setOutfitName("");
+      setSelectedItems({});
+      toast({ title: "Outfit saved!", description: `"${outfitName || "Untitled Outfit"}" has been saved.` });
+    } catch (err: any) {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    }
   };
 
   return (
@@ -62,6 +71,9 @@ export default function OutfitBuilderPage() {
               ]}
               onFilterChange={(_, val) => setFilterCategory(val)}
             />
+            {isLoading ? (
+              <p className="text-muted-foreground">Loading closet...</p>
+            ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               {filteredItems.map((item, i) => (
                 <motion.div
@@ -79,6 +91,7 @@ export default function OutfitBuilderPage() {
                 </motion.div>
               ))}
             </div>
+            )}
           </div>
 
           <div className="lg:col-span-2">
@@ -130,8 +143,8 @@ export default function OutfitBuilderPage() {
               )}
 
               <div className="flex gap-3 pt-2">
-                <Button variant="hero" className="flex-1 h-11" onClick={handleSave} disabled={filledCount === 0}>
-                  <Save className="h-4 w-4 mr-2" /> Save Outfit
+                <Button variant="hero" className="flex-1 h-11" onClick={handleSave} disabled={filledCount === 0 || createOutfit.isPending}>
+                  <Save className="h-4 w-4 mr-2" /> {createOutfit.isPending ? "Saving..." : "Save Outfit"}
                 </Button>
                 <Button variant="outline" onClick={() => setSelectedItems({})} className="rounded-xl">Clear</Button>
               </div>

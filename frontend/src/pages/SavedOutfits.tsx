@@ -4,17 +4,28 @@ import { AppLayout } from "@/layouts/AppLayout";
 import { OutfitCard } from "@/components/OutfitCard";
 import { FilterBar } from "@/components/FilterBar";
 import { EmptyState } from "@/components/EmptyState";
-import { mockOutfits } from "@/data/mockData";
 import { BookmarkCheck } from "lucide-react";
 import { motion } from "framer-motion";
+import { useDeleteOutfit, useOutfits } from "@/hooks/useOutfits";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SavedOutfitsPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [occasion, setOccasion] = useState("all");
+  const deleteMutation = useDeleteOutfit();
 
-  const filtered = mockOutfits.filter((o) =>
-    o.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const { data: filtered = [], isLoading, error } = useOutfits({ search, occasion });
+
+  const handleDelete = async (outfitId: string) => {
+    try {
+      await deleteMutation.mutateAsync(outfitId);
+      toast({ title: "Outfit deleted", description: "The saved outfit was removed." });
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    }
+  };
 
   return (
     <AppLayout>
@@ -30,9 +41,20 @@ export default function SavedOutfitsPage() {
           filters={[
             { label: "Occasion", value: "occasion", options: ["Casual", "Formal", "Business", "Party", "Sport", "Date Night"] },
           ]}
+          onFilterChange={(_, val) => setOccasion(val)}
         />
 
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <p className="text-muted-foreground">Loading outfits...</p>
+        ) : error ? (
+          <EmptyState
+            icon={BookmarkCheck}
+            title="Could not load outfits"
+            description={(error as Error).message}
+            actionLabel="Try Again"
+            onAction={() => window.location.reload()}
+          />
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon={BookmarkCheck}
             title="You haven't saved any outfits yet"
@@ -49,7 +71,7 @@ export default function SavedOutfitsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08, duration: 0.3 }}
               >
-                <OutfitCard outfit={outfit} onView={() => {}} onEdit={() => {}} onDelete={() => {}} />
+                <OutfitCard outfit={outfit} onView={() => {}} onEdit={() => {}} onDelete={() => handleDelete(outfit.id)} />
               </motion.div>
             ))}
           </div>

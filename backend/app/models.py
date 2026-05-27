@@ -2,8 +2,12 @@
 
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Boolean
 from sqlalchemy import func
-from database import Base
+from sqlalchemy.orm import relationship
 
+try:
+    from .database import Base
+except ImportError:
+    from database import Base
 
 
 class User(Base):
@@ -15,6 +19,9 @@ class User(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    clothes = relationship("Clothing", back_populates="user", cascade="all, delete-orphan")
+    outfits = relationship("Outfit", back_populates="user", cascade="all, delete-orphan")
 
 
 class Clothing(Base):
@@ -35,6 +42,9 @@ class Clothing(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    user = relationship("User", back_populates="clothes")
+    outfit_items = relationship("OutfitItem", back_populates="clothing", cascade="all, delete-orphan")
+
 
 class Outfit(Base):
     __tablename__ = "outfits"
@@ -49,6 +59,9 @@ class Outfit(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    user = relationship("User", back_populates="outfits")
+    items = relationship("OutfitItem", back_populates="outfit", cascade="all, delete-orphan")
+
 class OutfitItem(Base):
     __tablename__ = "outfit_items"
 
@@ -58,3 +71,6 @@ class OutfitItem(Base):
     slot = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    outfit = relationship("Outfit", back_populates="items")
+    clothing = relationship("Clothing", back_populates="outfit_items")

@@ -1,19 +1,30 @@
+import os
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from typing import List
 from sqlalchemy.orm import Session
-from database import Base, engine, SessionLocal
-from models import User, Clothing, Outfit, OutfitItem
-import schemas, models
+
+try:
+    from .database import Base, engine, SessionLocal
+    from . import schemas, models
+except ImportError:
+    from database import Base, engine, SessionLocal
+    import schemas, models
 
 
 app = FastAPI(title="SmartCloset AI API", version="1.0.0")
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,6 +41,22 @@ def get_db():
     finally:
         db.close()
 
+
+def ensure_demo_user(db: Session):
+    existing_user = db.query(models.User).filter(models.User.id == 1).first()
+    if existing_user:
+        return existing_user
+
+    user = models.User(
+        id=1,
+        email="demo@smartcloset.com",
+        name="Demo User"
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to SmartCloset AI API. SmartCloset backend running."}
@@ -41,20 +68,10 @@ def health_check():
 @app.post("/seed-user")
 def seed_user(db: Session = Depends(get_db)):
     existing_user = db.query(models.User).filter(models.User.id == 1).first()
-
     if existing_user:
         return {"message": "User already exists"}
 
-    user = models.User(
-        id=1,
-        email="demo@smartcloset.com",
-        name="Demo User"
-    )
-
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
+    user = ensure_demo_user(db)
     return {"message": "Demo user created", "user_id": user.id}
 
 
@@ -67,6 +84,7 @@ def create_clothing_item(
     clothing: schemas.ClothingCreate,
     db: Session = Depends(get_db)
 ):
+    ensure_demo_user(db)
     new_item = models.Clothing(
         user_id=1,
         image_url=clothing.image_url,
@@ -143,6 +161,7 @@ def create_outfit(
     outfit: schemas.OutfitCreate,
     db: Session = Depends(get_db)
 ):
+    ensure_demo_user(db)
     new_outfit = models.Outfit(
         user_id=1,
         name=outfit.name,
@@ -178,6 +197,12 @@ def create_outfit(
     return outfit_with_items
 
  
+
+@app.get("/outfits", response_model=List[schemas.OutfitResponse])
+def get_outfits(db: Session = Depends(get_db)):
+    outfits = db.query(models.Outfit).all()
+    return outfits
+
 
 
 @app.get("/outfits/{outfit_id}", response_model=schemas.OutfitResponse)

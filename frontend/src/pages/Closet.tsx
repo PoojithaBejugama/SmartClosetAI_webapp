@@ -6,24 +6,32 @@ import { AppLayout } from "@/layouts/AppLayout";
 import { ClothingCard } from "@/components/ClothingCard";
 import { FilterBar } from "@/components/FilterBar";
 import { EmptyState } from "@/components/EmptyState";
-import { mockClothingItems } from "@/data/mockData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ClothingItem } from "@/types";
 import { motion } from "framer-motion";
+import { useClothingItems, useDeleteClothing } from "@/hooks/useClothing";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ClosetPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState<ClothingItem | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
+  const deleteMutation = useDeleteClothing();
 
-  const items = mockClothingItems.filter((item) => {
-    const matchSearch = `${item.category} ${item.color} ${item.season}`.toLowerCase().includes(search.toLowerCase());
-    const matchCategory = !filters.category || filters.category === "all" || item.category === filters.category;
-    const matchColor = !filters.color || filters.color === "all" || item.color === filters.color;
-    const matchSeason = !filters.season || filters.season === "all" || item.season === filters.season;
-    return matchSearch && matchCategory && matchColor && matchSeason;
-  });
+  const { data, isLoading, error } = useClothingItems({ ...filters, search });
+  const items = data?.data || [];
+
+  const handleDelete = async (item: ClothingItem) => {
+    try {
+      await deleteMutation.mutateAsync(item.id);
+      if (selectedItem?.id === item.id) setSelectedItem(null);
+      toast({ title: "Item deleted", description: "The clothing item was removed from your closet." });
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    }
+  };
 
   return (
     <AppLayout>
@@ -49,7 +57,16 @@ export default function ClosetPage() {
           onFilterChange={(key, val) => setFilters((prev) => ({ ...prev, [key]: val }))}
         />
 
-        {items.length === 0 ? (
+        {isLoading ? (
+          <p className="text-muted-foreground">Loading closet...</p>
+        ) : error ? (
+          <EmptyState
+            title="Could not load closet"
+            description={(error as Error).message}
+            actionLabel="Try Again"
+            onAction={() => window.location.reload()}
+          />
+        ) : items.length === 0 ? (
           <EmptyState
             title="Your closet is empty"
             description="Upload your first clothing item to start building your digital wardrobe."
@@ -69,7 +86,7 @@ export default function ClosetPage() {
                   item={item}
                   onView={(i) => setSelectedItem(i)}
                   onEdit={() => {}}
-                  onDelete={() => {}}
+                  onDelete={handleDelete}
                   onAddToOutfit={() => navigate("/outfit-builder")}
                 />
               </motion.div>
@@ -100,7 +117,7 @@ export default function ClosetPage() {
                   <div className="flex gap-2.5 mt-8">
                     <Button variant="hero" size="sm" onClick={() => navigate("/outfit-builder")}>Add to Outfit</Button>
                     <Button variant="outline" size="sm" className="rounded-xl">Edit</Button>
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">Delete</Button>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDelete(selectedItem)}>Delete</Button>
                   </div>
                 </div>
               </div>

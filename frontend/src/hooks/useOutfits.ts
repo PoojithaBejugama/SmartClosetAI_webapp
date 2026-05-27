@@ -3,7 +3,7 @@ import { outfitService, type CreateOutfitRequest } from "@/services/outfitServic
 import { mockOutfits } from "@/data/mockData";
 import type { Outfit } from "@/types";
 
-const isDemoMode = !import.meta.env.VITE_API_BASE_URL;
+const isDemoMode = import.meta.env.VITE_DEMO_MODE === "true";
 
 export const outfitKeys = {
   all: ["outfits"] as const,

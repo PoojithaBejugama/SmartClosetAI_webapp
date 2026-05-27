@@ -12,6 +12,7 @@ import type { ClothingItem } from "@/types";
 // =============================================================================
 
 export interface CreateClothingRequest {
+  image_url?: string;
   category: string;
   color: string;
   season: string;
@@ -35,6 +36,41 @@ export interface PaginatedResponse<T> {
   limit: number;
 }
 
+interface BackendClothingItem {
+  id: number;
+  user_id: number;
+  image_url: string;
+  category: string;
+  color?: string | null;
+  season?: string | null;
+  occasion?: string | null;
+  notes?: string | null;
+  ai_confidence?: number | null;
+  is_favorite: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+const toClothingItem = (item: BackendClothingItem): ClothingItem => ({
+  id: String(item.id),
+  image_url: item.image_url,
+  category: item.category,
+  color: item.color || "",
+  season: item.season || "",
+  occasion: item.occasion || "",
+  notes: item.notes || "",
+  created_at: item.created_at,
+  favorite: item.is_favorite,
+});
+
 export const clothingService = {
   // Loads the user's wardrobe list. You can pass optional filters like
   // { category: "tops", color: "blue", sort: "newest" } to narrow results.
@@ -51,46 +87,73 @@ export const clothingService = {
       });
     }
 
-    // Build the final URL. If there are filters, it becomes e.g. "/clothing?category=tops".
-    // If no filters were passed, it's just "/clothing".
-    const qs = params.toString();
-    return apiClient.get<PaginatedResponse<ClothingItem>>(`/clothing${qs ? `?${qs}` : ""}`);
+    return apiClient.get<BackendClothingItem[]>("/clothes").then((items) => {
+      let data = items.map(toClothingItem);
+
+      if (filters) {
+        if (filters.category && filters.category !== "all")
+          data = data.filter((item) => item.category === filters.category);
+        if (filters.color && filters.color !== "all")
+          data = data.filter((item) => item.color === filters.color);
+        if (filters.season && filters.season !== "all")
+          data = data.filter((item) => item.season === filters.season);
+        if (filters.occasion && filters.occasion !== "all")
+          data = data.filter((item) => item.occasion === filters.occasion);
+        if (filters.search) {
+          const q = filters.search.toLowerCase();
+          data = data.filter((item) =>
+            `${item.category} ${item.color} ${item.season} ${item.occasion}`.toLowerCase().includes(q)
+          );
+        }
+      }
+
+      return { data, total: data.length, page: 1, limit: data.length };
+    });
   },
 
   // Fetches one specific clothing item using its unique ID.
   // Useful when the user clicks on an item to see its detail page.
   getById: (id: string) =>
-    apiClient.get<ClothingItem>(`/clothing/${id}`),
+    apiClient.get<BackendClothingItem[]>("/clothes").then((items) => {
+      const item = items.find((candidate) => String(candidate.id) === id);
+      if (!item) throw new Error("Item not found");
+      return toClothingItem(item);
+    }),
 
   // Adds a new clothing item to the wardrobe.
   // Because we're sending an image file (not just text), we use FormData
   // instead of JSON. FormData can bundle both the image and the text fields together.
-  upload: (file: File, metadata: CreateClothingRequest) => {
-    const formData = new FormData();
-    formData.append("image", file); // The actual photo file
+  upload: async (file: File, metadata: CreateClothingRequest) => {
+    const imageUrl = metadata.image_url || await fileToDataUrl(file);
 
-    // Add each metadata field (category, color, etc.) to the same FormData bundle.
-    // We skip falsy values so we don't send empty strings to the server.
-    Object.entries(metadata).forEach(([key, val]) => {
-      if (val) formData.append(key, val);
-    });
-
-    return apiClient.upload<ClothingItem>("/clothing", formData);
+    return apiClient.post<BackendClothingItem>("/clothes", {
+      image_url: imageUrl,
+      category: metadata.category,
+      color: metadata.color,
+      season: metadata.season,
+      occasion: metadata.occasion,
+      notes: metadata.notes || "",
+      is_favorite: false,
+    }).then(toClothingItem);
   },
 
   // Updates specific fields of an existing clothing item.
   // "Partial<CreateClothingRequest>" means you only need to pass the fields
   // you want to change — all others stay the same on the server.
   update: (id: string, data: Partial<CreateClothingRequest>) =>
-    apiClient.patch<ClothingItem>(`/clothing/${id}`, data),
+    apiClient.put<BackendClothingItem>(`/clothes/${id}`, data).then(toClothingItem),
 
   // Removes a clothing item from the wardrobe permanently.
   delete: (id: string) =>
-    apiClient.delete<void>(`/clothing/${id}`),
+    apiClient.delete<void>(`/clothes/${id}`),
 
   // Toggles the favorite/heart status of an item.
   // The server flips it (if it was favorited, it becomes unfavorited, and vice versa)
   // and returns the updated item so the UI can re-render immediately.
   toggleFavorite: (id: string) =>
-    apiClient.post<ClothingItem>(`/clothing/${id}/favorite`),
+    clothingService.getById(id).then((item) =>
+      apiClient.put<BackendClothingItem>(`/clothes/${id}`, {
+        is_favorite: !item.favorite,
+      }).then(toClothingItem)
+    ),
 };
