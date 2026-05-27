@@ -193,7 +193,7 @@ const isDemoMode = !import.meta.env.VITE_API_BASE_URL;
 
 When `VITE_API_BASE_URL` is set, the hooks call the real service layer instead of returning mock data. No other code changes are needed — just set the environment variable and ensure your backend implements the expected endpoints.
 
-## Mobile Experience
+## Mobile Experience (Not fully implemented)
 
 - **Bottom Navigation Bar** — Fixed bottom nav on mobile with quick access to Closet, Upload, Outfits, and AI pages
 - **Responsive Cards** — Stat cards and quick action cards use compact sizing on small screens
@@ -205,7 +205,6 @@ When `VITE_API_BASE_URL` is set, the hooks call the real service layer instead o
 
 The build output (`dist/`) is a static SPA. Deploy to any static host:
 
-- **Lovable** — Click Share → Publish
 - **Vercel** — Connect repo, framework preset: Vite
 - **Netlify** — Build command: `npm run build`, publish directory: `dist`
 - **AWS S3 + CloudFront** — Upload `dist/` to S3 bucket with SPA redirect rules
