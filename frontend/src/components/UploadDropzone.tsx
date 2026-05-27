@@ -11,17 +11,31 @@ interface UploadDropzoneProps {
 
 export function UploadDropzone({ onFileSelect, preview, onClear }: UploadDropzoneProps) {
   const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectFile = useCallback((file: File) => {
+    setError(null);
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Image must be 10MB or smaller.");
+      return;
+    }
+    onFileSelect(file);
+  }, [onFileSelect]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith("image/")) onFileSelect(file);
-  }, [onFileSelect]);
+    if (file) selectFile(file);
+  }, [selectFile]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) onFileSelect(file);
+    if (file) selectFile(file);
   };
 
   if (preview) {
@@ -79,7 +93,8 @@ export function UploadDropzone({ onFileSelect, preview, onClear }: UploadDropzon
           <p className="text-sm text-muted-foreground">
             or <span className="text-primary font-medium">browse files</span>
           </p>
-          <p className="text-xs text-muted-foreground/70 mt-2">PNG, JPG, WEBP · Max 10MB</p>
+          <p className="text-xs text-muted-foreground/70 mt-2">PNG, JPG, WEBP - Max 10MB</p>
+          {error && <p className="text-xs text-destructive mt-2">{error}</p>}
         </div>
       </div>
     </div>

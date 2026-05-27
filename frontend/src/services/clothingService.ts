@@ -51,13 +51,39 @@ interface BackendClothingItem {
   updated_at: string;
 }
 
-const fileToDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
+const loadImage = (file: File) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Could not read image file"));
+    };
+    image.src = objectUrl;
   });
+
+const fileToCompressedDataUrl = async (file: File) => {
+  const image = await loadImage(file);
+  const maxSize = 900;
+  const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not process image file");
+
+  context.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", 0.72);
+};
 
 const toClothingItem = (item: BackendClothingItem): ClothingItem => ({
   id: String(item.id),
@@ -120,11 +146,8 @@ export const clothingService = {
       return toClothingItem(item);
     }),
 
-  // Adds a new clothing item to the wardrobe.
-  // Because we're sending an image file (not just text), we use FormData
-  // instead of JSON. FormData can bundle both the image and the text fields together.
   upload: async (file: File, metadata: CreateClothingRequest) => {
-    const imageUrl = metadata.image_url || await fileToDataUrl(file);
+    const imageUrl = metadata.image_url || await fileToCompressedDataUrl(file);
 
     return apiClient.post<BackendClothingItem>("/clothes", {
       image_url: imageUrl,
