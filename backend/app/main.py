@@ -30,6 +30,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+print("CORS CONFIG LOADED")
+
+
 @app.on_event("startup")
 def create_database_tables():
     Base.metadata.create_all(bind=engine)
