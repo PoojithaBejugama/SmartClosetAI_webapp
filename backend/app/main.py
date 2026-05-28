@@ -1,9 +1,12 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException
+import uuid
+from typing import List, Optional
+
+from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-from typing import List
 from sqlalchemy.orm import Session
+from supabase import create_client
 
 try:
     from .database import Base, engine, SessionLocal
@@ -14,6 +17,11 @@ except ImportError:
 
 
 app = FastAPI(title="SmartCloset AI API", version="1.0.0")
+
+# Supabase Storage is owned by the backend so the service role key never gets exposed to browser code.
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "clothing-images")
 
 allowed_origins = [
     origin.strip()
@@ -61,6 +69,47 @@ def ensure_demo_user(db: Session):
     db.refresh(user)
     return user
 
+
+def get_supabase_client():
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase storage is not configured on the backend"
+        )
+
+    # The service role key can bypass storage policies, so it must stay server-side only.
+    return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+
+async def upload_clothing_image(image: UploadFile):
+    if not image.content_type or not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be an image")
+
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded image is empty")
+
+    file_extension = os.path.splitext(image.filename or "")[1] or ".jpg"
+    # A UUID makes every storage path unique and avoids overwriting another user's file.
+    storage_path = f"user-1/{uuid.uuid4()}{file_extension}"
+
+    supabase = get_supabase_client()
+
+    try:
+        supabase.storage.from_(SUPABASE_STORAGE_BUCKET).upload(
+            storage_path,
+            image_bytes,
+            file_options={
+                "content-type": image.content_type,
+                "upsert": "false",
+            },
+        )
+        public_url = supabase.storage.from_(SUPABASE_STORAGE_BUCKET).get_public_url(storage_path)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not upload image to Supabase: {exc}") from exc
+
+    return public_url
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to SmartCloset AI API. SmartCloset backend running."}
@@ -83,22 +132,32 @@ def seed_user(db: Session = Depends(get_db)):
 # CLOTHES ROUTES
 # -------------------------
 
+#add new clothes
 @app.post("/clothes", response_model=schemas.ClothingResponse)
-def create_clothing_item(
-    clothing: schemas.ClothingCreate,
+async def create_clothing_item(
+    # UploadFile receives the binary image; Form receives the text fields from the same multipart request.
+    image: UploadFile = File(...),
+    category: str = Form(...),
+    color: Optional[str] = Form(None),
+    season: Optional[str] = Form(None),
+    occasion: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     ensure_demo_user(db)
+    image_url = await upload_clothing_image(image)
+
     new_item = models.Clothing(
         user_id=1,
-        image_url=clothing.image_url,
-        category=clothing.category,
-        color=clothing.color,
-        season=clothing.season,
-        occasion=clothing.occasion,
-        notes=clothing.notes,
-        ai_confidence=clothing.ai_confidence,
-        is_favorite=clothing.is_favorite
+        # Postgres stores only the public Supabase URL, not the image bytes/base64 payload.
+        image_url=image_url,
+        category=category,
+        color=color,
+        season=season,
+        occasion=occasion,
+        notes=notes,
+        ai_confidence=None,
+        is_favorite=False
     )
 
     db.add(new_item)

@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 load_dotenv()
 
+#this will ge the url from env vars or uses the local database as backup
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://postgres:password@localhost:5432/smartclosetdb",

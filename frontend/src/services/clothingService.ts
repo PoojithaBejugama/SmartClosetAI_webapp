@@ -51,40 +51,6 @@ interface BackendClothingItem {
   updated_at: string;
 }
 
-const loadImage = (file: File) =>
-  new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    const objectUrl = URL.createObjectURL(file);
-
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("Could not read image file"));
-    };
-    image.src = objectUrl;
-  });
-
-const fileToCompressedDataUrl = async (file: File) => {
-  const image = await loadImage(file);
-  const maxSize = 900;
-  const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
-  const width = Math.max(1, Math.round(image.width * scale));
-  const height = Math.max(1, Math.round(image.height * scale));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Could not process image file");
-
-  context.drawImage(image, 0, 0, width, height);
-  return canvas.toDataURL("image/jpeg", 0.72);
-};
-
 const toClothingItem = (item: BackendClothingItem): ClothingItem => ({
   id: String(item.id),
   image_url: item.image_url,
@@ -146,18 +112,19 @@ export const clothingService = {
       return toClothingItem(item);
     }),
 
-  upload: async (file: File, metadata: CreateClothingRequest) => {
-    const imageUrl = metadata.image_url || await fileToCompressedDataUrl(file);
+  upload: (file: File, metadata: CreateClothingRequest) => {
+    const formData = new FormData();
 
-    return apiClient.post<BackendClothingItem>("/clothes", {
-      image_url: imageUrl,
-      category: metadata.category,
-      color: metadata.color,
-      season: metadata.season,
-      occasion: metadata.occasion,
-      notes: metadata.notes || "",
-      is_favorite: false,
-    }).then(toClothingItem);
+    // The existing /clothes endpoint now expects multipart data: one binary image plus text metadata.
+    formData.append("image", file);
+    formData.append("category", metadata.category);
+    formData.append("color", metadata.color);
+    formData.append("season", metadata.season);
+    formData.append("occasion", metadata.occasion);
+    formData.append("notes", metadata.notes || "");
+
+    // apiClient.upload intentionally does not set Content-Type so the browser can add the multipart boundary.
+    return apiClient.upload<BackendClothingItem>("/clothes", formData).then(toClothingItem);
   },
 
   // Updates specific fields of an existing clothing item.
