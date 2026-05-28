@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -13,6 +14,9 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
+  // Shows the email verification popup after Supabase accepts an email/password signup.
+  // We keep the entered email here so the popup can tell the user exactly which inbox to check.
+  const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { login, signup, loginWithGoogle, isLoading } = useAuth();
@@ -45,9 +49,11 @@ export default function AuthPage() {
   const handleSignup = async (data: SignupFormData) => {
     try {
       await signup({ name: data.name, email: data.email, password: data.password });
-      // TODO(BACKEND): If signup should not auto-login, navigate to
-      // a "check your email" page instead of protected routes.
-      navigate(from, { replace: true });
+      // Supabase may require email verification, so signup should not assume the user can enter the app immediately.
+      // Instead of navigating to a protected route, we show the next step and move them back to the sign-in form.
+      setVerificationEmail(data.email);
+      setIsLogin(true);
+      signupForm.reset();
     } catch (err: any) {
       toast({ title: "Signup failed", description: err.message, variant: "destructive" });
     }
@@ -67,6 +73,21 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
+      {/* Shows clear next steps after signup because Supabase may require email verification before login. */}
+      <Dialog open={!!verificationEmail} onOpenChange={(open) => { if (!open) setVerificationEmail(null); }}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Check your email</DialogTitle>
+            <DialogDescription>
+              We sent a verification link to {verificationEmail}. Click the link in that email to finish setting up your account, then come back and sign in.
+            </DialogDescription>
+          </DialogHeader>
+          <Button className="w-full mt-2" variant="hero" onClick={() => setVerificationEmail(null)}>
+            Back to sign in
+          </Button>
+        </DialogContent>
+      </Dialog>
+
       {/* Left panel */}
       <div className="hidden lg:flex gradient-hero items-center justify-center p-16 relative overflow-hidden">
         <div className="absolute top-1/4 -left-20 w-64 h-64 rounded-full gradient-primary opacity-[0.06] blur-3xl" />
