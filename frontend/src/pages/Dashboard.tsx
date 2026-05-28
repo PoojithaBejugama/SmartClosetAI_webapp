@@ -16,7 +16,7 @@ export default function DashboardPage() {
   const { data: clothingData } = useClothingItems();
   const { data: outfitsData } = useOutfits();
 
-  const items = clothingData?.data || mockClothingItems;
+  const items = clothingData?.data || [];
   const outfits = outfitsData || mockOutfits;
   const topCount = items.filter((i) => i.category === "Top").length;
   const bottomCount = items.filter((i) => i.category === "Bottom").length;
@@ -73,18 +73,28 @@ export default function DashboardPage() {
               View all <ArrowRight className="h-3 w-3" />
             </Button>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            {mockClothingItems.slice(0, 6).map((item, i) => (
-              <motion.div
-                key={item.id}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05, duration: 0.3 }}
-              >
-                <ClothingCard item={item} onView={() => navigate("/closet")} />
-              </motion.div>
-            ))}
-          </div>
+          {items.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center shadow-card">
+              <p className="font-medium text-foreground">No uploads yet</p>
+              <p className="text-sm text-muted-foreground mt-1.5">Add your first clothing item to see it here.</p>
+              <Button variant="hero" size="sm" className="mt-5" onClick={() => navigate("/upload")}>
+                Upload Item
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+              {items.slice(0, 6).map((item, i) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05, duration: 0.3 }}
+                >
+                  <ClothingCard item={item} onView={() => navigate("/closet")} />
+                </motion.div>
+              ))}
+            </div>
+          )}
         </div>
 
         <motion.div

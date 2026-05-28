@@ -1,4 +1,5 @@
 import os
+import traceback
 import uuid
 from typing import List, Optional
 
@@ -100,13 +101,19 @@ async def upload_clothing_image(image: UploadFile):
             storage_path,
             image_bytes,
             file_options={
+                # Supabase Storage needs the MIME type so the public URL renders as an image in the browser.
                 "content-type": image.content_type,
                 "upsert": "false",
             },
         )
         public_url = supabase.storage.from_(SUPABASE_STORAGE_BUCKET).get_public_url(storage_path)
     except Exception as exc:
+        # Render logs this traceback, which makes storage/env/bucket failures visible during deployment debugging.
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Could not upload image to Supabase: {exc}") from exc
+
+    if not public_url:
+        raise HTTPException(status_code=500, detail="Supabase did not return a public image URL")
 
     return public_url
 
