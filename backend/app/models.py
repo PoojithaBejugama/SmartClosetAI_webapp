@@ -14,6 +14,8 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Auth: Stores the Supabase Auth user id so backend rows can be linked to the signed-in user.
+    supabase_user_id = Column(String, unique=True, nullable=True, index=True)
     email = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False)
 

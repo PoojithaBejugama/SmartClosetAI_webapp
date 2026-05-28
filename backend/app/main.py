@@ -6,15 +6,18 @@ from typing import List, Optional
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from supabase import create_client
 
 try:
     from .database import Base, engine, SessionLocal
     from . import schemas, models
+    from .auth import get_current_user
 except ImportError:
     from database import Base, engine, SessionLocal
     import schemas, models
+    from auth import get_current_user
 
 
 app = FastAPI(title="SmartCloset AI API", version="1.0.0")
@@ -45,6 +48,10 @@ print("CORS CONFIG LOADED")
 @app.on_event("startup")
 def create_database_tables():
     Base.metadata.create_all(bind=engine)
+    # Auth: create_all does not add new columns to existing tables, so this keeps deployed DBs compatible.
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS supabase_user_id VARCHAR"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_supabase_user_id ON users (supabase_user_id)"))
 
 #Db session dependency - can only start if a db session is active
 def get_db():
@@ -82,7 +89,7 @@ def get_supabase_client():
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
-async def upload_clothing_image(image: UploadFile):
+async def upload_clothing_image(image: UploadFile, current_user: models.User):
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file must be an image")
 
@@ -92,7 +99,8 @@ async def upload_clothing_image(image: UploadFile):
 
     file_extension = os.path.splitext(image.filename or "")[1] or ".jpg"
     # A UUID makes every storage path unique and avoids overwriting another user's file.
-    storage_path = f"user-1/{uuid.uuid4()}{file_extension}"
+    # Auth: include the authenticated user's local id in the path so storage stays organized per user.
+    storage_path = f"user-{current_user.id}/{uuid.uuid4()}{file_extension}"
 
     supabase = get_supabase_client()
 
@@ -149,13 +157,14 @@ async def create_clothing_item(
     season: Optional[str] = Form(None),
     occasion: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
-    ensure_demo_user(db)
-    image_url = await upload_clothing_image(image)
+    # Auth: authenticated uploads use the signed-in user's local database id, not demo user id 1.
+    image_url = await upload_clothing_image(image, current_user)
 
     new_item = models.Clothing(
-        user_id=1,
+        user_id=current_user.id,
         # Postgres stores only the public Supabase URL, not the image bytes/base64 payload.
         image_url=image_url,
         category=category,
@@ -175,8 +184,12 @@ async def create_clothing_item(
 
 #gets all the clothes list from DB
 @app.get("/clothes", response_model=List[schemas.ClothingResponse])
-def get_clothing_items(db: Session = Depends(get_db)):
-    items = db.query(models.Clothing).all()
+def get_clothing_items(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Auth: users only see clothing rows that belong to their local user id.
+    items = db.query(models.Clothing).filter(models.Clothing.user_id == current_user.id).all()
     return items
 
 #you can update only the fields you want
@@ -184,9 +197,15 @@ def get_clothing_items(db: Session = Depends(get_db)):
 def update_clothing_item(
     clothing_id: int,
     clothing_update: schemas.ClothingUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
-    item = db.query(models.Clothing).filter(models.Clothing.id == clothing_id).first()
+    # Auth: updates are scoped by item id and owner id so one user cannot edit another user's clothes.
+    item = (
+        db.query(models.Clothing)
+        .filter(models.Clothing.id == clothing_id, models.Clothing.user_id == current_user.id)
+        .first()
+    )
 
     if not item:
         raise HTTPException(status_code=404, detail="Clothing item not found")
@@ -203,8 +222,17 @@ def update_clothing_item(
 
 
 @app.delete("/clothes/{clothing_id}")
-def delete_clothing_item(clothing_id: int, db: Session = Depends(get_db)):
-    item = db.query(models.Clothing).filter(models.Clothing.id == clothing_id).first()
+def delete_clothing_item(
+    clothing_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Auth: deletes are scoped by owner id for per-user data isolation.
+    item = (
+        db.query(models.Clothing)
+        .filter(models.Clothing.id == clothing_id, models.Clothing.user_id == current_user.id)
+        .first()
+    )
 
     if not item:
         raise HTTPException(status_code=404, detail="Clothing item not found")
@@ -229,11 +257,12 @@ def delete_clothing_item(clothing_id: int, db: Session = Depends(get_db)):
 @app.post("/outfits", response_model=schemas.OutfitResponse)
 def create_outfit(
     outfit: schemas.OutfitCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
-    ensure_demo_user(db)
+    # Auth: outfits are saved under the authenticated user's local database id.
     new_outfit = models.Outfit(
-        user_id=1,
+        user_id=current_user.id,
         name=outfit.name,
         source=outfit.source,
         occasion=outfit.occasion,
@@ -245,7 +274,12 @@ def create_outfit(
     db.refresh(new_outfit)
 
     for item in outfit.items:
-        clothing = db.query(models.Clothing).filter(models.Clothing.id == item.clothing_id).first()
+        # Auth: an outfit can only reference clothing owned by the same authenticated user.
+        clothing = (
+            db.query(models.Clothing)
+            .filter(models.Clothing.id == item.clothing_id, models.Clothing.user_id == current_user.id)
+            .first()
+        )
         if not clothing:
             raise HTTPException(status_code=404, detail=f"Clothing item {item.clothing_id} not found")
 
@@ -269,15 +303,28 @@ def create_outfit(
  
 
 @app.get("/outfits", response_model=List[schemas.OutfitResponse])
-def get_outfits(db: Session = Depends(get_db)):
-    outfits = db.query(models.Outfit).all()
+def get_outfits(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Auth: users only see their own saved outfits.
+    outfits = db.query(models.Outfit).filter(models.Outfit.user_id == current_user.id).all()
     return outfits
 
 
 
 @app.get("/outfits/{outfit_id}", response_model=schemas.OutfitResponse)
-def get_outfit(outfit_id: int, db: Session = Depends(get_db)):
-    outfit = db.query(models.Outfit).filter(models.Outfit.id == outfit_id).first()
+def get_outfit(
+    outfit_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Auth: fetch by outfit id and owner id to prevent cross-user reads.
+    outfit = (
+        db.query(models.Outfit)
+        .filter(models.Outfit.id == outfit_id, models.Outfit.user_id == current_user.id)
+        .first()
+    )
 
     if not outfit:
         raise HTTPException(status_code=404, detail="Outfit not found")
@@ -289,9 +336,15 @@ def get_outfit(outfit_id: int, db: Session = Depends(get_db)):
 def update_outfit(
     outfit_id: int,
     outfit_update: schemas.OutfitUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
-    outfit = db.query(models.Outfit).filter(models.Outfit.id == outfit_id).first()
+    # Auth: updates are scoped by outfit id and owner id.
+    outfit = (
+        db.query(models.Outfit)
+        .filter(models.Outfit.id == outfit_id, models.Outfit.user_id == current_user.id)
+        .first()
+    )
 
     if not outfit:
         raise HTTPException(status_code=404, detail="Outfit not found")
@@ -319,7 +372,12 @@ def update_outfit(
         db.commit()
 
         for item in outfit_update.items:
-            clothing = db.query(models.Clothing).filter(models.Clothing.id == item.clothing_id).first()
+            # Auth: replacement outfit items must also belong to this authenticated user.
+            clothing = (
+                db.query(models.Clothing)
+                .filter(models.Clothing.id == item.clothing_id, models.Clothing.user_id == current_user.id)
+                .first()
+            )
             if not clothing:
                 raise HTTPException(status_code=404, detail=f"Clothing item {item.clothing_id} not found")
 
@@ -337,8 +395,17 @@ def update_outfit(
 
 
 @app.delete("/outfits/{outfit_id}")
-def delete_outfit(outfit_id: int, db: Session = Depends(get_db)):
-    outfit = db.query(models.Outfit).filter(models.Outfit.id == outfit_id).first()
+def delete_outfit(
+    outfit_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Auth: deletes are scoped by owner id for per-user data isolation.
+    outfit = (
+        db.query(models.Outfit)
+        .filter(models.Outfit.id == outfit_id, models.Outfit.user_id == current_user.id)
+        .first()
+    )
 
     if not outfit:
         raise HTTPException(status_code=404, detail="Outfit not found")

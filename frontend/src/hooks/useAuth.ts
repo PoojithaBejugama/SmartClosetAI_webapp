@@ -1,12 +1,7 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
-import { authService, type AuthUser, type LoginRequest, type SignupRequest } from "@/services/authService";
-
-// TODO(BACKEND): Search for this tag to find every auth integration point.
-// TODO(BACKEND): Backend integration checklist for this file:
-// 1) Set VITE_API_BASE_URL in your frontend .env so demo mode turns off.
-// 2) Keep login/signup calling authService.* and ensure backend returns { token, user }.
-// 3) Optional hardening: on app load, call authService.getProfile() to verify a stored token.
-// 4) Keep logout calling authService.logout() if your backend invalidates tokens.
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import type { Session, User } from "@supabase/supabase-js";
+import { hasSupabaseConfig, supabase } from "@/lib/supabaseClient";
+import type { AuthUser, LoginRequest, SignupRequest } from "@/services/authService";
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -15,89 +10,130 @@ interface AuthContextType {
   isLoading: boolean;
   login: (data: LoginRequest) => Promise<void>;
   signup: (data: SignupRequest) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => void;
   updateUser: (user: AuthUser) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// TODO(BACKEND): Remove demo mode fallback after backend auth routes exist.
-// The current backend has no /auth/* routes, so auth stays local/demo for now.
-const isDemoMode = import.meta.env.VITE_AUTH_DEMO_MODE !== "false";
+const toAuthUser = (supabaseUser: User): AuthUser => {
+  const metadata = supabaseUser.user_metadata || {};
 
-const DEMO_USER: AuthUser = {
-  id: "demo-user",
-  name: "Poojitha",
-  email: "poojitha@example.com",
-  preferred_style: "casual",
-  preferred_colors: "neutral",
+  return {
+    id: supabaseUser.id,
+    name: metadata.name || metadata.full_name || supabaseUser.email || "SmartCloset User",
+    email: supabaseUser.email || "",
+    avatar_url: metadata.avatar_url,
+    preferred_style: metadata.preferred_style,
+    preferred_colors: metadata.preferred_colors,
+  };
 };
 
 export function useAuthProvider() {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    const stored = localStorage.getItem("auth_user");
-    return stored ? JSON.parse(stored) : null;
-  });
-  const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem("auth_token")
-  );
-  const [isLoading, setIsLoading] = useState(false);
-
-  // TODO(BACKEND): Optional startup validation.
-  // Right now, if localStorage has a token+user we trust it immediately.
-  // With a backend, you can validate the token on startup via authService.getProfile()
-  // and logout() if profile fetch fails with 401.
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const isAuthenticated = !!token && !!user;
 
-  const persistAuth = useCallback((authToken: string, authUser: AuthUser) => {
-    localStorage.setItem("auth_token", authToken);
+  const persistSession = useCallback((session: Session | null) => {
+    if (!session?.user || !session.access_token) {
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("auth_user");
+      setToken(null);
+      setUser(null);
+      return;
+    }
+
+    // Supabase owns password/session security; React stores the access token only so apiClient can call FastAPI.
+    const authUser = toAuthUser(session.user);
+    localStorage.setItem("auth_token", session.access_token);
     localStorage.setItem("auth_user", JSON.stringify(authUser));
-    setToken(authToken);
+    setToken(session.access_token);
     setUser(authUser);
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    // On page load, mirror the current Supabase session into local React state.
+    supabase.auth.getSession().then(({ data }) => {
+      if (!isMounted) return;
+      persistSession(data.session);
+      setIsLoading(false);
+    });
+
+    // This keeps localStorage/auth state synced after login, logout, token refresh, and OAuth redirects.
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      persistSession(session);
+      setIsLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [persistSession]);
 
   const login = useCallback(async (data: LoginRequest) => {
     setIsLoading(true);
     try {
-      if (isDemoMode) {
-        // TODO(BACKEND): Delete this demo branch when backend auth is required.
-        persistAuth("demo-token", DEMO_USER);
-        return;
-      }
-      // TODO(BACKEND): Ensure POST /auth/login exists and returns { token, user }.
-      const response = await authService.login(data);
-      persistAuth(response.token, response.user);
+      if (!hasSupabaseConfig) throw new Error("Supabase frontend env vars are missing");
+
+      const { data: response, error } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
+      if (error) throw error;
+      persistSession(response.session);
     } finally {
       setIsLoading(false);
     }
-  }, [persistAuth]);
+  }, [persistSession]);
 
   const signup = useCallback(async (data: SignupRequest) => {
     setIsLoading(true);
     try {
-      if (isDemoMode) {
-        // TODO(BACKEND): Delete this demo branch when backend auth is required.
-        persistAuth("demo-token", { ...DEMO_USER, name: data.name, email: data.email });
-        return;
-      }
-      // TODO(BACKEND): Ensure POST /auth/signup exists and returns { token, user }.
-      const response = await authService.signup(data);
-      persistAuth(response.token, response.user);
+      if (!hasSupabaseConfig) throw new Error("Supabase frontend env vars are missing");
+
+      const { data: response, error } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: {
+          data: { name: data.name },
+        },
+      });
+      if (error) throw error;
+      persistSession(response.session);
     } finally {
       setIsLoading(false);
     }
-  }, [persistAuth]);
+  }, [persistSession]);
+
+  const loginWithGoogle = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      if (!hasSupabaseConfig) throw new Error("Supabase frontend env vars are missing");
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
+      if (error) throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_user");
     setToken(null);
     setUser(null);
-    if (!isDemoMode) {
-      // TODO(BACKEND): Keep this call if your backend supports token invalidation.
-      authService.logout().catch(() => {});
-    }
+    supabase.auth.signOut().catch(() => {});
   }, []);
 
   const updateUser = useCallback((updatedUser: AuthUser) => {
@@ -105,7 +141,7 @@ export function useAuthProvider() {
     setUser(updatedUser);
   }, []);
 
-  return { user, token, isAuthenticated, isLoading, login, signup, logout, updateUser };
+  return { user, token, isAuthenticated, isLoading, login, signup, loginWithGoogle, logout, updateUser };
 }
 
 export function useAuth() {
