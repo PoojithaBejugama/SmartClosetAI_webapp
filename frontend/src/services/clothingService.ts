@@ -13,11 +13,30 @@ import type { ClothingItem } from "@/types";
 
 export interface CreateClothingRequest {
   image_url?: string;
+  name?: string;
   category: string;
   color: string;
   season: string;
   occasion: string;
+  description?: string;
+  material_guess?: string;
+  recommendation_notes?: string;
+  style_tags?: string[];
   notes?: string;
+  ai_confidence?: number;
+}
+
+export interface ClothingAnalysisResponse {
+  name: string;
+  category: string;
+  color: string;
+  season: string;
+  occasion: string;
+  description: string;
+  material_guess: string;
+  recommendation_notes: string;
+  style_tags: string[];
+  ai_confidence: number;
 }
 
 export interface ClothingFilters {
@@ -40,10 +59,15 @@ interface BackendClothingItem {
   id: number;
   user_id: number;
   image_url: string;
+  name?: string | null;
   category: string;
   color?: string | null;
   season?: string | null;
   occasion?: string | null;
+  description?: string | null;
+  material_guess?: string | null;
+  recommendation_notes?: string | null;
+  style_tags?: string[] | null;
   notes?: string | null;
   ai_confidence?: number | null;
   is_favorite: boolean;
@@ -54,11 +78,17 @@ interface BackendClothingItem {
 const toClothingItem = (item: BackendClothingItem): ClothingItem => ({
   id: String(item.id),
   image_url: item.image_url,
+  name: item.name || item.category,
   category: item.category,
   color: item.color || "",
   season: item.season || "",
   occasion: item.occasion || "",
+  description: item.description || "",
+  material_guess: item.material_guess || "",
+  recommendation_notes: item.recommendation_notes || "",
+  style_tags: item.style_tags || [],
   notes: item.notes || "",
+  ai_confidence: item.ai_confidence ?? undefined,
   created_at: item.created_at,
   favorite: item.is_favorite,
 });
@@ -94,7 +124,7 @@ export const clothingService = {
         if (filters.search) {
           const q = filters.search.toLowerCase();
           data = data.filter((item) =>
-            `${item.category} ${item.color} ${item.season} ${item.occasion}`.toLowerCase().includes(q)
+            `${item.name} ${item.category} ${item.color} ${item.season} ${item.occasion} ${item.description} ${item.style_tags.join(" ")}`.toLowerCase().includes(q)
           );
         }
       }
@@ -112,16 +142,31 @@ export const clothingService = {
       return toClothingItem(item);
     }),
 
+  analyze: (file: File) => {
+    const formData = new FormData();
+    // Analysis is image-only and does not save the item; it just asks Gemini for editable metadata.
+    formData.append("image", file);
+
+    return apiClient.upload<ClothingAnalysisResponse>("/clothes/analyze", formData);
+  },
+
   upload: (file: File, metadata: CreateClothingRequest) => {
     const formData = new FormData();
 
     // The existing /clothes endpoint now expects multipart data: one binary image plus text metadata.
     formData.append("image", file);
+    formData.append("name", metadata.name || "");
     formData.append("category", metadata.category);
     formData.append("color", metadata.color);
     formData.append("season", metadata.season);
     formData.append("occasion", metadata.occasion);
+    formData.append("description", metadata.description || "");
+    formData.append("material_guess", metadata.material_guess || "");
+    formData.append("recommendation_notes", metadata.recommendation_notes || "");
+    // Multipart cannot carry arrays natively, so tags are serialized and parsed by the backend.
+    formData.append("style_tags", JSON.stringify(metadata.style_tags || []));
     formData.append("notes", metadata.notes || "");
+    if (metadata.ai_confidence !== undefined) formData.append("ai_confidence", String(metadata.ai_confidence));
 
     // apiClient.upload intentionally does not set Content-Type so the browser can add the multipart boundary.
     return apiClient.upload<BackendClothingItem>("/clothes", formData).then(toClothingItem);

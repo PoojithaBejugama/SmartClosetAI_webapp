@@ -104,14 +104,19 @@ export default function ClosetPage() {
                 <div className="p-8 flex flex-col justify-between">
                   <div>
                     <DialogHeader>
-                      <DialogTitle className="font-heading text-2xl tracking-tight">{selectedItem.category}</DialogTitle>
+                      <DialogTitle className="font-heading text-2xl tracking-tight">{selectedItem.name || selectedItem.category}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 mt-6">
+                      <Detail label="Category" value={selectedItem.category} />
                       <Detail label="Color" value={selectedItem.color} />
                       <Detail label="Season" value={selectedItem.season} />
                       <Detail label="Occasion" value={selectedItem.occasion} />
+                      {selectedItem.description && <Detail label="AI Description" value={selectedItem.description} />}
+                      {selectedItem.material_guess && <Detail label="Material Guess" value={selectedItem.material_guess} />}
+                      {selectedItem.recommendation_notes && <Detail label="Recommendation Notes" value={selectedItem.recommendation_notes} />}
+                      {selectedItem.style_tags.length > 0 && <Detail label="Style Tags" value={selectedItem.style_tags.join(", ")} />}
                       <Detail label="Uploaded" value={new Date(selectedItem.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} />
-                      {selectedItem.notes && <Detail label="Notes" value={selectedItem.notes} />}
+                      {selectedItem.notes && <Detail label="Personal Notes" value={selectedItem.notes} />}
                     </div>
                   </div>
                   <div className="flex gap-2.5 mt-8">

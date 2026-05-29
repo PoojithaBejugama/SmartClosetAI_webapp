@@ -16,10 +16,15 @@ export const signupSchema = z.object({
 });
 
 export const uploadClothingSchema = z.object({
+  name: z.string().optional(),
   category: z.string().min(1, "Please select a category"),
   color: z.string().min(1, "Please select a color"),
   season: z.string().min(1, "Please select a season"),
   occasion: z.string().min(1, "Please select an occasion"),
+  description: z.string().optional(),
+  material_guess: z.string().optional(),
+  recommendation_notes: z.string().optional(),
+  style_tags: z.array(z.string()).optional(),
   notes: z.string().optional(),
 });
 

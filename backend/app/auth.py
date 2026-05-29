@@ -1,7 +1,18 @@
-# This file contains the backend-only Supabase Auth helpers.
-# It verifies the Supabase access token that the frontend sends in the
-# Authorization header, then maps that Supabase user to a local database user.
-# It never sees raw passwords; Supabase Auth handles password security.
+"""
+Authentication helpers for the backend.
+
+The frontend logs users in with Supabase Auth. After login, the frontend sends a
+Supabase access token to this backend in the HTTP `Authorization` header.
+
+This file is responsible for:
+
+1. Reading that token from the request.
+2. Asking Supabase if the token is valid.
+3. Finding or creating the matching local `User` row in our database.
+4. Returning that local user to API routes.
+
+The backend never receives raw passwords. Password handling is done by Supabase.
+"""
 
 import os
 from typing import Optional
@@ -23,6 +34,18 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 
 def get_db():
+    """
+    Create a database session for auth-related dependency injection.
+
+    FastAPI dependency functions can `yield` a value. Code before `yield` runs
+    before the request handler, and code after `yield` runs after the request is
+    finished. Here that means:
+
+    - Open a database session.
+    - Let the route/auth code use it.
+    - Always close it at the end so connections are not leaked.
+    """
+
     db = SessionLocal()
     try:
         yield db
@@ -31,6 +54,17 @@ def get_db():
 
 
 def get_supabase_admin_client():
+    """
+    Build a Supabase client using the backend-only service role key.
+
+    The service role key is powerful, so it must never be sent to the browser.
+    We use it only on the server to verify access tokens and read Supabase Auth
+    user information.
+
+    If the environment variables are missing, the API raises a 500 error because
+    auth cannot work without Supabase configuration.
+    """
+
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         raise HTTPException(status_code=500, detail="Supabase Auth is not configured")
 
@@ -42,6 +76,22 @@ def get_current_user(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
+    """
+    FastAPI dependency that returns the signed-in local database user.
+
+    Routes use this function with `Depends(get_current_user)`. FastAPI then runs
+    this function before the route body. If auth fails, this function raises an
+    HTTP error and the route never runs.
+
+    The flow is:
+
+    1. Read the `Authorization: Bearer <token>` header.
+    2. Send the token to Supabase to verify it.
+    3. Look for a local user whose `supabase_user_id` matches Supabase's id.
+    4. If the local user does not exist yet, create it.
+    5. Return the local `models.User` object so routes can filter data by owner.
+    """
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing auth token")
 

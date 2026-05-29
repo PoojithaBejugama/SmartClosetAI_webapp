@@ -60,7 +60,13 @@ export function useUploadClothing() {
           id: `item-${Date.now()}`,
           image_url: URL.createObjectURL(file),
           ...metadata,
+          name: metadata.name || metadata.category,
+          description: metadata.description || "",
+          material_guess: metadata.material_guess || "",
+          recommendation_notes: metadata.recommendation_notes || "",
+          style_tags: metadata.style_tags || [],
           notes: metadata.notes || "",
+          ai_confidence: metadata.ai_confidence,
           created_at: new Date().toISOString(),
           favorite: false,
         } as ClothingItem);

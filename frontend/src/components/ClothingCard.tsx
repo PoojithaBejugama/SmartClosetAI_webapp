@@ -84,7 +84,7 @@ export function ClothingCard({ item, onView, onEdit, onDelete, onAddToOutfit, se
       {/* Info footer */}
       <div className="p-3.5">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-card-foreground tracking-tight">{item.category}</span>
+          <span className="text-sm font-medium text-card-foreground tracking-tight truncate">{item.name || item.category}</span>
           <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{item.color}</span>
         </div>
         <p className="text-[11px] text-muted-foreground mt-1.5 tracking-wide">

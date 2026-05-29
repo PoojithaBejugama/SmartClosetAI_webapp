@@ -1,4 +1,29 @@
+"""
+Main FastAPI application for the SmartCloset backend.
+
+This file is the backend entry point. When you run:
+
+    uvicorn app.main:app --reload
+
+Uvicorn imports this file, finds the `app` object, and starts serving the API.
+
+The responsibilities in this file are:
+
+- Create the FastAPI app.
+- Configure CORS so the frontend can call the backend.
+- Create/update database tables at startup.
+- Upload clothing photos to Supabase Storage.
+- Define all HTTP routes for clothes and outfits.
+- Connect protected routes to the currently signed-in user.
+
+Beginner mental model:
+Each `@app.get`, `@app.post`, `@app.put`, or `@app.delete` decorator creates an
+API endpoint. The function directly below the decorator is what runs when the
+frontend calls that endpoint.
+"""
+
 import os
+import json
 import traceback
 import uuid
 from typing import List, Optional
@@ -14,10 +39,12 @@ try:
     from .database import Base, engine, SessionLocal
     from . import schemas, models
     from .auth import get_current_user
+    from .ai_metadata import analyze_clothing_image, read_image_upload
 except ImportError:
     from database import Base, engine, SessionLocal
     import schemas, models
     from auth import get_current_user
+    from ai_metadata import analyze_clothing_image, read_image_upload
 
 
 app = FastAPI(title="SmartCloset AI API", version="1.0.0")
@@ -47,14 +74,40 @@ print("CORS CONFIG LOADED")
 
 @app.on_event("startup")
 def create_database_tables():
+    """
+    Create missing database tables and add newer columns at server startup.
+
+    `Base.metadata.create_all(bind=engine)` creates tables for the SQLAlchemy
+    models if they do not already exist. It is helpful for local development.
+
+    Important detail: `create_all` does not add new columns to tables that
+    already exist. Because this app has evolved over time, the `ALTER TABLE`
+    statements below add newer columns safely with `IF NOT EXISTS`.
+
+    A larger production app would usually use Alembic migrations instead.
+    """
+
     Base.metadata.create_all(bind=engine)
     # Auth: create_all does not add new columns to existing tables, so this keeps deployed DBs compatible.
     with engine.begin() as connection:
         connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS supabase_user_id VARCHAR"))
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_supabase_user_id ON users (supabase_user_id)"))
+        # AI metadata columns are added defensively so existing deployed databases keep working after this feature ships.
+        connection.execute(text("ALTER TABLE clothes ADD COLUMN IF NOT EXISTS name VARCHAR"))
+        connection.execute(text("ALTER TABLE clothes ADD COLUMN IF NOT EXISTS description VARCHAR"))
+        connection.execute(text("ALTER TABLE clothes ADD COLUMN IF NOT EXISTS material_guess VARCHAR"))
+        connection.execute(text("ALTER TABLE clothes ADD COLUMN IF NOT EXISTS recommendation_notes VARCHAR"))
+        connection.execute(text("ALTER TABLE clothes ADD COLUMN IF NOT EXISTS style_tags JSONB"))
 
-#Db session dependency - can only start if a db session is active
 def get_db():
+    """
+    FastAPI dependency that gives one database session to a request.
+
+    Routes declare `db: Session = Depends(get_db)`. FastAPI calls this function,
+    passes the yielded `db` object into the route, and then closes the session
+    after the request is complete.
+    """
+
     db = SessionLocal()
     try:
         yield db
@@ -63,6 +116,14 @@ def get_db():
 
 
 def ensure_demo_user(db: Session):
+    """
+    Create or return the old demo user with id 1.
+
+    This was useful before Supabase Auth was added. The app now uses real signed
+    in users for clothing and outfits, but this helper is kept so the old
+    `/seed-user` development route still works.
+    """
+
     existing_user = db.query(models.User).filter(models.User.id == 1).first()
     if existing_user:
         return existing_user
@@ -79,6 +140,14 @@ def ensure_demo_user(db: Session):
 
 
 def get_supabase_client():
+    """
+    Create a Supabase client for backend-owned Storage operations.
+
+    Clothing images are uploaded from the backend, not directly from the
+    browser. That keeps the Supabase service role key secret and lets the backend
+    control where files are stored.
+    """
+
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         raise HTTPException(
             status_code=500,
@@ -89,7 +158,47 @@ def get_supabase_client():
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
+def parse_style_tags(style_tags: Optional[str]) -> List[str]:
+    """
+    Convert style tags from multipart form text into a Python list.
+
+    The frontend sends normal form fields because the clothing upload includes a
+    file. Multipart forms do not have a real array type, so `style_tags` arrives
+    as JSON text like:
+
+        ["casual", "layering-piece"]
+
+    This function parses that text, checks that it is actually a list, and
+    normalizes each tag for consistent future recommendation logic.
+    """
+
+    # Multipart forms cannot send arrays directly, so the frontend sends style tags as JSON text.
+    if not style_tags:
+        return []
+
+    try:
+        parsed = json.loads(style_tags)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="style_tags must be a JSON array") from exc
+
+    if not isinstance(parsed, list):
+        raise HTTPException(status_code=400, detail="style_tags must be a JSON array")
+
+    return [str(tag).strip().lower().replace(" ", "-") for tag in parsed if str(tag).strip()]
+
+
 async def upload_clothing_image(image: UploadFile, current_user: models.User):
+    """
+    Validate and upload a clothing image to Supabase Storage.
+
+    The database should not store raw image bytes. Instead, this function uploads
+    the image file to Supabase Storage and returns the public URL. The clothing
+    row then stores only that URL in `image_url`.
+
+    The path includes the user's local id and a UUID so two users cannot
+    accidentally overwrite each other's files.
+    """
+
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file must be an image")
 
@@ -127,14 +236,35 @@ async def upload_clothing_image(image: UploadFile, current_user: models.User):
 
 @app.get("/")
 def read_root():
+    """
+    Basic welcome endpoint.
+
+    This is mostly a quick sanity check that the API server is running. It does
+    not require authentication and does not touch the database.
+    """
+
     return {"message": "Welcome to SmartCloset AI API. SmartCloset backend running."}
 
 @app.get("/health")
 def health_check():
+    """
+    Health check endpoint for local debugging or deployment monitoring.
+
+    A hosting provider can call this route to confirm the server process is
+    responding. It intentionally returns a tiny JSON object.
+    """
+
     return {"status": "healthy"}
 
 @app.post("/seed-user")
 def seed_user(db: Session = Depends(get_db)):
+    """
+    Development helper route that creates the old demo user.
+
+    Most authenticated routes now use Supabase users through `get_current_user`.
+    This endpoint remains useful for older manual tests that expect user id 1.
+    """
+
     existing_user = db.query(models.User).filter(models.User.id == 1).first()
     if existing_user:
         return {"message": "User already exists"}
@@ -147,19 +277,61 @@ def seed_user(db: Session = Depends(get_db)):
 # CLOTHES ROUTES
 # -------------------------
 
+@app.post("/clothes/analyze", response_model=schemas.ClothingAnalyzeResponse)
+async def analyze_clothing_item(
+    image: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Analyze a clothing photo with Gemini before saving the item.
+
+    The frontend calls this endpoint immediately after a user selects a photo.
+    The route validates the image, sends it to Gemini, and returns editable AI
+    metadata such as item name, description, material guess, and styling notes.
+
+    No database row is created here. Saving happens later in `create_clothing_item`.
+    """
+
+    # The signed-in user must own the upload flow, but analysis does not create database rows.
+    del current_user
+    image_bytes = await read_image_upload(image)
+    analysis = analyze_clothing_image(image_bytes, image.content_type or "image/jpeg")
+    return analysis
+
+
 #add new clothes
 @app.post("/clothes", response_model=schemas.ClothingResponse)
 async def create_clothing_item(
     # UploadFile receives the binary image; Form receives the text fields from the same multipart request.
     image: UploadFile = File(...),
+    name: Optional[str] = Form(None),
     category: str = Form(...),
     color: Optional[str] = Form(None),
     season: Optional[str] = Form(None),
     occasion: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    material_guess: Optional[str] = Form(None),
+    recommendation_notes: Optional[str] = Form(None),
+    style_tags: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
+    ai_confidence: Optional[float] = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    Save a new clothing item for the signed-in user.
+
+    This endpoint receives one multipart request containing:
+
+    - the binary image file,
+    - user-editable fields like category/color/notes,
+    - AI metadata generated earlier by `/clothes/analyze`.
+
+    The image is uploaded to Supabase Storage first. Then a database row is
+    created with the public image URL and metadata. The route returns the saved
+    clothing row as JSON.
+    """
+
     # Auth: authenticated uploads use the signed-in user's local database id, not demo user id 1.
     image_url = await upload_clothing_image(image, current_user)
 
@@ -167,12 +339,18 @@ async def create_clothing_item(
         user_id=current_user.id,
         # Postgres stores only the public Supabase URL, not the image bytes/base64 payload.
         image_url=image_url,
+        name=name,
         category=category,
         color=color,
         season=season,
         occasion=occasion,
+        description=description,
+        material_guess=material_guess,
+        recommendation_notes=recommendation_notes,
+        style_tags=parse_style_tags(style_tags),
+        # User notes remain separate from AI description/recommendation fields.
         notes=notes,
-        ai_confidence=None,
+        ai_confidence=ai_confidence,
         is_favorite=False
     )
 
@@ -188,6 +366,13 @@ def get_clothing_items(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    Return all clothing items owned by the signed-in user.
+
+    The filter `models.Clothing.user_id == current_user.id` is important. It
+    prevents one user from seeing another user's closet.
+    """
+
     # Auth: users only see clothing rows that belong to their local user id.
     items = db.query(models.Clothing).filter(models.Clothing.user_id == current_user.id).all()
     return items
@@ -200,6 +385,14 @@ def update_clothing_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    Update selected fields on one clothing item.
+
+    The request body uses `ClothingUpdate`, where every field is optional.
+    `exclude_unset=True` means only fields actually sent by the frontend are
+    applied. Fields omitted from the request stay unchanged.
+    """
+
     # Auth: updates are scoped by item id and owner id so one user cannot edit another user's clothes.
     item = (
         db.query(models.Clothing)
@@ -227,6 +420,14 @@ def delete_clothing_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    Delete one clothing item owned by the signed-in user.
+
+    Before deleting the clothing row, the route deletes any `OutfitItem` join
+    rows that reference it. This prevents orphaned outfit links pointing to a
+    clothing item that no longer exists.
+    """
+
     # Auth: deletes are scoped by owner id for per-user data isolation.
     item = (
         db.query(models.Clothing)
@@ -260,6 +461,14 @@ def create_outfit(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    Create a saved outfit from existing clothing items.
+
+    The route first creates the parent `Outfit` row. Then it loops through the
+    requested clothing items and creates `OutfitItem` join rows. Each referenced
+    clothing item is checked to make sure it belongs to the current user.
+    """
+
     # Auth: outfits are saved under the authenticated user's local database id.
     new_outfit = models.Outfit(
         user_id=current_user.id,
@@ -307,6 +516,13 @@ def get_outfits(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    Return all saved outfits owned by the signed-in user.
+
+    Like the clothing list route, the user filter is what keeps each user's data
+    private.
+    """
+
     # Auth: users only see their own saved outfits.
     outfits = db.query(models.Outfit).filter(models.Outfit.user_id == current_user.id).all()
     return outfits
@@ -319,6 +535,13 @@ def get_outfit(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    Return one saved outfit by id.
+
+    The query checks both `outfit_id` and `current_user.id`. That means even if
+    a user guesses another outfit's id, they cannot read it unless they own it.
+    """
+
     # Auth: fetch by outfit id and owner id to prevent cross-user reads.
     outfit = (
         db.query(models.Outfit)
@@ -339,6 +562,14 @@ def update_outfit(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    Update an outfit's details and optionally replace its item list.
+
+    Basic fields like name, source, occasion, and notes are changed only if the
+    frontend sent a non-null value. If `items` is provided, the route deletes the
+    old outfit-item links and creates a new set.
+    """
+
     # Auth: updates are scoped by outfit id and owner id.
     outfit = (
         db.query(models.Outfit)
@@ -400,6 +631,13 @@ def delete_outfit(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    Delete one saved outfit owned by the signed-in user.
+
+    The route deletes related `OutfitItem` rows first, then deletes the parent
+    `Outfit` row. This keeps the database from keeping unused join rows.
+    """
+
     # Auth: deletes are scoped by owner id for per-user data isolation.
     outfit = (
         db.query(models.Outfit)

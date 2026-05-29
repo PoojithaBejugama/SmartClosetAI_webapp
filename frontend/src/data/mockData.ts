@@ -34,11 +34,17 @@ const itemDefs = [
 export const mockClothingItems: ClothingItem[] = itemDefs.map((def, i) => ({
   id: `item-${i + 1}`,
   image_url: clothingImages[def.img],
+  name: `${def.color} ${def.category}`,
   category: def.category,
   color: def.color,
   season: def.season,
   occasion: def.occasion,
+  description: `${def.color} ${def.category.toLowerCase()} suitable for ${def.occasion.toLowerCase()} outfits.`,
+  material_guess: "",
+  recommendation_notes: "",
+  style_tags: [def.occasion.toLowerCase().replace(" ", "-"), def.season.toLowerCase().replace(" ", "-")],
   notes: "",
+  ai_confidence: undefined,
   created_at: new Date(Date.now() - i * 86400000).toISOString(),
   favorite: i % 3 === 0,
 }));
