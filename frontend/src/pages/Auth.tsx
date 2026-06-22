@@ -12,6 +12,11 @@ import { loginSchema, signupSchema, type LoginFormData, type SignupFormData } fr
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 
+// Supabase errors are usually Error objects, but this keeps the UI safe if a
+// library throws a string or another unexpected value.
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : "Something went wrong. Please try again.";
+
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   // Shows the email verification popup after Supabase accepts an email/password signup.
@@ -41,8 +46,8 @@ export default function AuthPage() {
       // TODO(BACKEND): If backend returns "email_not_verified" or similar,
       // handle that response before navigating to protected pages.
       navigate(from, { replace: true });
-    } catch (err: any) {
-      toast({ title: "Login failed", description: err.message, variant: "destructive" });
+    } catch (error: unknown) {
+      toast({ title: "Login failed", description: getErrorMessage(error), variant: "destructive" });
     }
   };
 
@@ -54,8 +59,8 @@ export default function AuthPage() {
       setVerificationEmail(data.email);
       setIsLogin(true);
       signupForm.reset();
-    } catch (err: any) {
-      toast({ title: "Signup failed", description: err.message, variant: "destructive" });
+    } catch (error: unknown) {
+      toast({ title: "Signup failed", description: getErrorMessage(error), variant: "destructive" });
     }
   };
 
@@ -63,8 +68,8 @@ export default function AuthPage() {
     try {
       // Supabase starts the Google OAuth redirect; after redirect, useAuth reads the returned session.
       await loginWithGoogle();
-    } catch (err: any) {
-      toast({ title: "Google login failed", description: err.message, variant: "destructive" });
+    } catch (error: unknown) {
+      toast({ title: "Google login failed", description: getErrorMessage(error), variant: "destructive" });
     }
   };
 

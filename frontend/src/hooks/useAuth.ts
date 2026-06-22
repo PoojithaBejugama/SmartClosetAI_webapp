@@ -1,22 +1,22 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { hasSupabaseConfig, supabase } from "@/lib/supabaseClient";
-import type { AuthUser, LoginRequest, SignupRequest } from "@/services/authService";
+import type { AuthUser, LoginRequest, SignupRequest } from "@/types/auth";
 
 interface AuthContextType {
   user: AuthUser | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (data: LoginRequest) => Promise<void>;
   signup: (data: SignupRequest) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (user: AuthUser) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Convert Supabase's large User object into the small shape used by the UI.
 const toAuthUser = (supabaseUser: User): AuthUser => {
   const metadata = supabaseUser.user_metadata || {};
 
@@ -32,41 +32,28 @@ const toAuthUser = (supabaseUser: User): AuthUser => {
 
 export function useAuthProvider() {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const isAuthenticated = !!token && !!user;
-
-  const persistSession = useCallback((session: Session | null) => {
-    if (!session?.user || !session.access_token) {
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("auth_user");
-      setToken(null);
-      setUser(null);
-      return;
-    }
-
-    // Supabase owns password/session security; React stores the access token only so apiClient can call FastAPI.
-    const authUser = toAuthUser(session.user);
-    localStorage.setItem("auth_token", session.access_token);
-    localStorage.setItem("auth_user", JSON.stringify(authUser));
-    setToken(session.access_token);
-    setUser(authUser);
+  // Supabase persists and refreshes the session. React only mirrors the user
+  // into state so components can render the correct authenticated UI.
+  const applySession = useCallback((session: Session | null) => {
+    setUser(session?.user ? toAuthUser(session.user) : null);
   }, []);
 
   useEffect(() => {
     let isMounted = true;
 
-    // On page load, mirror the current Supabase session into local React state.
-    supabase.auth.getSession().then(({ data }) => {
-      if (!isMounted) return;
-      persistSession(data.session);
-      setIsLoading(false);
+    // Restore the existing Supabase session when the app first loads.
+    void supabase.auth.getSession().then(({ data }) => {
+      if (isMounted) {
+        applySession(data.session);
+        setIsLoading(false);
+      }
     });
 
-    // This keeps localStorage/auth state synced after login, logout, token refresh, and OAuth redirects.
+    // Keep React synchronized after login, logout, token refresh, or OAuth.
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      persistSession(session);
+      applySession(session);
       setIsLoading(false);
     });
 
@@ -74,7 +61,7 @@ export function useAuthProvider() {
       isMounted = false;
       listener.subscription.unsubscribe();
     };
-  }, [persistSession]);
+  }, [applySession]);
 
   const login = useCallback(async (data: LoginRequest) => {
     setIsLoading(true);
@@ -86,11 +73,11 @@ export function useAuthProvider() {
         password: data.password,
       });
       if (error) throw error;
-      persistSession(response.session);
+      applySession(response.session);
     } finally {
       setIsLoading(false);
     }
-  }, [persistSession]);
+  }, [applySession]);
 
   const signup = useCallback(async (data: SignupRequest) => {
     setIsLoading(true);
@@ -105,11 +92,11 @@ export function useAuthProvider() {
         },
       });
       if (error) throw error;
-      persistSession(response.session);
+      applySession(response.session);
     } finally {
       setIsLoading(false);
     }
-  }, [persistSession]);
+  }, [applySession]);
 
   const loginWithGoogle = useCallback(async () => {
     setIsLoading(true);
@@ -128,20 +115,28 @@ export function useAuthProvider() {
     }
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("auth_user");
-    setToken(null);
-    setUser(null);
-    supabase.auth.signOut().catch(() => {});
+  const logout = useCallback(async () => {
+    // Supabase clears its stored session; the listener above clears React state.
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   }, []);
 
+  // This currently updates UI state only. A future profile endpoint should
+  // persist these changes before Settings presents them as permanent.
   const updateUser = useCallback((updatedUser: AuthUser) => {
-    localStorage.setItem("auth_user", JSON.stringify(updatedUser));
     setUser(updatedUser);
   }, []);
 
-  return { user, token, isAuthenticated, isLoading, login, signup, loginWithGoogle, logout, updateUser };
+  return {
+    user,
+    isAuthenticated: user !== null,
+    isLoading,
+    login,
+    signup,
+    loginWithGoogle,
+    logout,
+    updateUser,
+  };
 }
 
 export function useAuth() {
