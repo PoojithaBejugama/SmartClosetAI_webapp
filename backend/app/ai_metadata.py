@@ -16,6 +16,7 @@ The upload flow is:
 """
 
 import json
+import logging
 import os
 from typing import Any, Dict, List
 
@@ -28,6 +29,10 @@ try:
 except ImportError:  # pragma: no cover - only hit when dependencies have not been installed yet.
     genai = None
     types = None
+
+
+# Uvicorn's logger is visible in local terminal output and Render logs.
+logger = logging.getLogger("uvicorn.error")
 
 
 class ClothingAIAnalysis(BaseModel):
@@ -170,6 +175,21 @@ def analyze_clothing_image(image_bytes: bytes, mime_type: str) -> ClothingAIAnal
 
     client = genai.Client(api_key=api_key)
 
+    # Log only safe request details. Do not log the API key or raw image bytes.
+    logger.info(
+        "Sending clothing metadata request to Gemini: %s",
+        json.dumps(
+            {
+            "gemini_model": GEMINI_METADATA_MODEL,
+            "mime_type": mime_type,
+            "image_size_bytes": len(image_bytes),
+            "prompt": METADATA_PROMPT.strip(),
+            "response_schema": METADATA_SCHEMA,
+            },
+            default=str,
+        ),
+    )
+
     try:
         response = client.models.generate_content(
             model=GEMINI_METADATA_MODEL,
@@ -184,7 +204,19 @@ def analyze_clothing_image(image_bytes: bytes, mime_type: str) -> ClothingAIAnal
             ),
         )
     except Exception as exc:
+        logger.exception("Gemini metadata generation failed")
         raise HTTPException(status_code=502, detail=f"Gemini metadata generation failed: {exc}") from exc
+
+    logger.info(
+        "Received clothing metadata response from Gemini: %s",
+        json.dumps(
+            {
+            "gemini_model": GEMINI_METADATA_MODEL,
+            "raw_response_text": response.text,
+            },
+            default=str,
+        ),
+    )
 
     try:
         parsed = json.loads(response.text or "{}")
