@@ -49,7 +49,7 @@ resource "azurerm_linux_web_app" "backend" {
     "DATABASE_URL"                   = var.database_url
     "GEMINI_API_KEY"                 = var.gemini_api_key
     "GEMINI_METADATA_MODEL"          = var.gemini_metadata_model
-    "FRONTEND_URL"                   = "https://${azurerm_static_web_app.frontend.default_host_name}"
+    "ALLOWED_ORIGINS"                = "https://${azurerm_static_web_app.frontend.default_host_name}"
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "true"
   }
 }
@@ -60,10 +60,4 @@ resource "azurerm_static_web_app" "frontend" {
   location            = var.static_web_app_location
   sku_tier            = "Free"
   sku_size            = "Free"
-
-  app_settings = {
-    "VITE_SUPABASE_URL"      = var.supabase_url
-    "VITE_SUPABASE_ANON_KEY" = var.supabase_anon_key
-    "VITE_API_BASE_URL"      = "https://${azurerm_linux_web_app.backend.default_hostname}"
-  }
 }

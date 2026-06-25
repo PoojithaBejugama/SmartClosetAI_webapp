@@ -5,6 +5,7 @@ on:
     branches:
       - azure-deployment
     paths:
+      - "infra/**"
       - "backend/**"
       - "frontend/**"
       - ".github/workflows/deploy-apps.yaml"
