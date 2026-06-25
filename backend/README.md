@@ -1,117 +1,178 @@
-# SmartCloset AI Backend
+# SmartClosetAI Backend
 
-FastAPI backend for SmartCloset AI. It stores users, clothing items, outfits, and outfit item links in PostgreSQL using SQLAlchemy.
+FastAPI backend for SmartClosetAI.
 
-## Tech Stack
+The backend handles authenticated clothing uploads, Gemini-powered AI metadata generation, Supabase Storage image uploads, and PostgreSQL persistence.
+
+## Current backend responsibilities
+
+- Verify Supabase Auth bearer tokens.
+- Create/find the matching local user row.
+- Receive clothing images from the frontend.
+- Send image bytes to Gemini for clothing metadata.
+- Return AI-generated metadata to the frontend before saving.
+- Upload saved clothing images to Supabase Storage.
+- Store clothing metadata in PostgreSQL.
+- Provide basic clothing and outfit API routes.
+
+## Tech stack
 
 - Python
 - FastAPI
 - SQLAlchemy
 - PostgreSQL
-- Uvicorn
 - Pydantic
+- Uvicorn
+- Supabase Python client
+- Gemini via `google-genai`
 
-## Backend Structure
-
-```text
-backend/
-+-- README.md
-+-- requirements.txt
-+-- app/
-    +-- __init__.py
-    +-- database.py
-    +-- main.py
-    +-- models.py
-    +-- requirements.txt
-    +-- schemas.py
-```
-
-## What Each File Does
-
-- `app/main.py`: FastAPI app setup, CORS config, database table creation, and API routes.
-- `app/database.py`: PostgreSQL database connection, SQLAlchemy engine, session setup, and base model.
-- `app/models.py`: SQLAlchemy database table models for users, clothing, outfits, and outfit items.
-- `app/schemas.py`: Pydantic request and response schemas used by the API.
-- `requirements.txt`: Python dependencies needed to run the backend.
-
-## Prerequisites
-
-Install these before running the backend:
-
-- Python 3.10 or newer
-- PostgreSQL
-- pip
-
-The backend currently expects this database URL:
+## Important files
 
 ```text
-postgresql://postgres:password@localhost:5432/smartclosetdb
+backend/app/main.py
+  FastAPI app setup, CORS, startup database setup, and API routes.
+
+backend/app/ai_metadata.py
+  Gemini clothing analysis logic, prompt, response schema, and response cleanup.
+
+backend/app/auth.py
+  Supabase token verification and local user mapping.
+
+backend/app/database.py
+  SQLAlchemy engine, session setup, and database URL handling.
+
+backend/app/models.py
+  SQLAlchemy models for users, clothes, outfits, and outfit items.
+
+backend/app/schemas.py
+  Pydantic request/response schemas.
+
+backend/requirements.txt
+  Python dependencies.
 ```
 
-That means your local PostgreSQL setup should have:
+## AI description endpoint
 
-- username: `postgres`
-- password: `password`
-- database name: `smartclosetdb`
-- port: `5432`
-
-## Setup
-
-From the project root:
-
-```bash
-cd smartcloset-ai/backend
+```text
+POST /clothes/analyze
 ```
 
-Create and activate a virtual environment:
+Receives:
+
+- multipart form field `image`
+- Supabase bearer token in the `Authorization` header
+
+Flow:
+
+```text
+1. Frontend sends image as multipart/form-data.
+2. Backend verifies the Supabase user.
+3. FastAPI receives the file as `UploadFile`.
+4. `read_image_upload` validates the file and reads bytes.
+5. `analyze_clothing_image` sends the bytes to Gemini.
+6. Gemini returns JSON metadata.
+7. Backend validates/normalizes the metadata.
+8. Backend returns metadata to the frontend.
+```
+
+Response shape:
+
+```json
+{
+  "name": "Navy cropped hoodie",
+  "category": "Top",
+  "color": "Navy",
+  "season": "Fall",
+  "occasion": "Casual",
+  "description": "Detailed visual description of the item.",
+  "material_guess": "cotton fleece",
+  "recommendation_notes": "Styling advice and common pairings.",
+  "style_tags": ["casual", "cozy", "layering-piece"],
+  "ai_confidence": 0.86
+}
+```
+
+This endpoint does not save anything. It only analyzes the image.
+
+## Save clothing endpoint
+
+```text
+POST /clothes
+```
+
+Receives:
+
+- multipart form field `image`
+- final user-editable metadata fields
+- Supabase bearer token
+
+Flow:
+
+```text
+1. Backend verifies the user.
+2. Backend uploads the image to Supabase Storage.
+3. Supabase returns a public image URL.
+4. Backend creates a `clothes` row in PostgreSQL.
+5. Backend returns the saved clothing item.
+```
+
+The database stores the image URL, not raw image bytes.
+
+## Environment variables
+
+Create:
+
+```text
+backend/.env
+```
+
+Example:
+
+```env
+DATABASE_URL=postgresql://postgres:password@localhost:5432/smartclosetdb
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_STORAGE_BUCKET=clothing-images
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_METADATA_MODEL=gemini-2.0-flash
+ALLOWED_ORIGINS=http://localhost:8080
+```
+
+Do not expose these backend secrets in the frontend:
+
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `GEMINI_API_KEY`
+- `DATABASE_URL`
+
+## Local setup
+
+From the backend folder:
 
 ```bash
 python -m venv .venv
-```
-
-On Windows PowerShell:
-
-```bash
 .\.venv\Scripts\Activate.ps1
-```
-
-On macOS/Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
 pip install -r requirements.txt
 ```
 
-## Database Setup
-
-Create the PostgreSQL database:
+Create your local PostgreSQL database:
 
 ```sql
 CREATE DATABASE smartclosetdb;
 ```
 
-The tables are created automatically when the FastAPI app starts because `Base.metadata.create_all(bind=engine)` runs in `app/main.py`.
-
-## Run the Backend
-
-From `smartcloset-ai/backend`, run:
+Run the backend:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The API will run at:
+Backend URL:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-Interactive API docs:
+API docs:
 
 ```text
 http://127.0.0.1:8000/docs
@@ -123,73 +184,78 @@ Health check:
 http://127.0.0.1:8000/health
 ```
 
-## Seed Demo User
+## Database notes
 
-The clothing and outfit routes currently use demo user ID `1`. Before adding clothes or outfits, create the demo user:
+Tables are created at startup with:
 
-```bash
-curl -X POST http://127.0.0.1:8000/seed-user
+```py
+Base.metadata.create_all(bind=engine)
 ```
 
-Expected response:
+The app also runs some defensive `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements in `main.py` so older deployed databases can receive new AI metadata columns.
 
-```json
-{
-  "message": "Demo user created",
-  "user_id": 1
-}
-```
+For a production-grade migration system, add Alembic later.
 
-If the user already exists, the API returns:
-
-```json
-{
-  "message": "User already exists"
-}
-```
-
-## API Routes
+## Main API routes
 
 ### General
 
-- `GET /`: Welcome message.
-- `GET /health`: Health check.
-- `POST /seed-user`: Creates the demo user with ID `1`.
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/` | Welcome/sanity route |
+| `GET` | `/health` | Health check |
+| `POST` | `/seed-user` | Legacy development helper |
 
 ### Clothes
 
-- `POST /clothes`: Create a clothing item.
-- `GET /clothes`: Get all clothing items.
-- `PUT /clothes/{clothing_id}`: Update a clothing item.
-- `DELETE /clothes/{clothing_id}`: Delete a clothing item.
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/clothes/analyze` | Analyze clothing image with Gemini |
+| `POST` | `/clothes` | Save clothing image and metadata |
+| `GET` | `/clothes` | List current user's clothing items |
+| `PUT` | `/clothes/{clothing_id}` | Update one clothing item |
+| `DELETE` | `/clothes/{clothing_id}` | Delete one clothing item |
 
 ### Outfits
 
-- `POST /outfits`: Create an outfit.
-- `GET /outfits/{outfit_id}`: Get one outfit.
-- `PUT /outfits/{outfit_id}`: Update an outfit.
-- `DELETE /outfits/{outfit_id}`: Delete an outfit.
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/outfits` | Create outfit |
+| `GET` | `/outfits` | List current user's outfits |
+| `GET` | `/outfits/{outfit_id}` | Get one outfit |
+| `PUT` | `/outfits/{outfit_id}` | Update one outfit |
+| `DELETE` | `/outfits/{outfit_id}` | Delete one outfit |
 
-## Example Requests
+## Gemini logging
 
-Create a clothing item:
+`app/ai_metadata.py` logs:
 
-```bash
-curl -X POST http://127.0.0.1:8000/clothes \
-  -H "Content-Type: application/json" \
-  -d "{\"image_url\":\"https://example.com/shirt.jpg\",\"category\":\"shirt\",\"color\":\"white\",\"season\":\"summer\",\"occasion\":\"casual\",\"notes\":\"basic white tee\",\"is_favorite\":false}"
-```
+- Gemini model
+- image MIME type
+- image size in bytes
+- prompt
+- requested response schema
+- raw Gemini response text
 
-Create an outfit:
+It does not log:
 
-```bash
-curl -X POST http://127.0.0.1:8000/outfits \
-  -H "Content-Type: application/json" \
-  -d "{\"name\":\"Casual Day\",\"source\":\"manual\",\"occasion\":\"casual\",\"notes\":\"simple outfit\",\"items\":[{\"clothing_id\":1,\"slot\":\"top\"}]}"
-```
+- Gemini API key
+- Supabase keys
+- raw image bytes
 
-## Notes
+View these logs in your local Uvicorn terminal or Render service logs.
 
-- CORS is currently open with `allow_origins=["*"]`, which is convenient for local development.
-- For production, replace the hardcoded database URL in `app/database.py` with an environment variable.
-- The app does not currently include authentication. Routes use the demo user ID `1`.
+## Roadmap
+
+- [x] Supabase-authenticated backend routes
+- [x] Gemini clothing image analysis
+- [x] Supabase Storage upload for clothing images
+- [x] PostgreSQL persistence for clothing metadata
+- [ ] Add file size limits
+- [ ] Add stronger image validation
+- [ ] Add Alembic migrations
+- [ ] Add automated backend tests
+- [ ] Add real AI outfit recommendation endpoint
+- [ ] Improve production error handling/log formatting
+- [ ] Add private storage policies instead of public image URLs
+
