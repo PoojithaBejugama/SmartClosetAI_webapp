@@ -1,14 +1,16 @@
 name: Terraform Azure Infrastructure
 
 on:
-  push:
-    branches:
-      - azure-deployment
-    paths:
-      - "infra/**"
-      - ".github/workflows/terraform.yaml"
-
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
 
 permissions:
   id-token: write
