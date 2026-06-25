@@ -23,9 +23,27 @@ jobs:
       run:
         working-directory: infra
 
+    env:
+      TF_VAR_subscription_id: ${{ secrets.TF_VAR_subscription_id }}
+      TF_VAR_supabase_url: ${{ secrets.TF_VAR_supabase_url }}
+      TF_VAR_supabase_anon_key: ${{ secrets.TF_VAR_supabase_anon_key }}
+      TF_VAR_supabase_service_role_key: ${{ secrets.TF_VAR_supabase_service_role_key }}
+      TF_VAR_database_url: ${{ secrets.TF_VAR_database_url }}
+      TF_VAR_gemini_api_key: ${{ secrets.TF_VAR_gemini_api_key }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      - name: Validate Azure login secrets
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          test -n "$AZURE_CLIENT_ID" || (echo "Missing GitHub secret: AZURE_CLIENT_ID" && exit 1)
+          test -n "$AZURE_TENANT_ID" || (echo "Missing GitHub secret: AZURE_TENANT_ID" && exit 1)
+          test -n "$AZURE_SUBSCRIPTION_ID" || (echo "Missing GitHub secret: AZURE_SUBSCRIPTION_ID" && exit 1)
 
       - name: Azure login using OIDC
         uses: azure/login@v2
