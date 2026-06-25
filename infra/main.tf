@@ -1,6 +1,13 @@
 terraform {
   required_version = ">= 1.6.0"
 
+   backend "azurerm" {
+    resource_group_name  = "smartclosetai-tfstate-rg"
+    storage_account_name = "smartclosetaitfstate"
+    container_name       = "tfstate"
+    key                  = "smartclosetai.tfstate"
+  }
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
