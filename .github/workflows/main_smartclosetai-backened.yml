@@ -73,4 +73,5 @@ jobs:
         with:
           app-name: 'smartclosetai-backened'
           slot-name: 'Production'
+          package: ./backend
           
