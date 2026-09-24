@@ -25,6 +25,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.TF_VAR_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.TF_VAR_SUPABASE_ANON_KEY }}
+          VITE_API_BASE_URL: "https://smartclosetai-backened-ecfsftejgzhzhwgr.westus-01.azurewebsites.net"
           VITE_DEMO_MODE: "false"
           VITE_AUTH_DEMO_MODE: "false"
 
@@ -34,7 +35,7 @@ jobs:
           action: "upload"
 
           app_location: "frontend"
-          api_location: "smartclosetai-backened-ecfsftejgzhzhwgr.westus-01.azurewebsites.net"
+          api_location: ""
           output_location: "dist"
 
   close_pull_request_job:
